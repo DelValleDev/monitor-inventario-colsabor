@@ -1076,8 +1076,6 @@ def main():
                 )
 
             # Mostrar última actualización
-            from datetime import datetime
-
             if "ultima_actualizacion" not in st.session_state:
                 st.session_state["ultima_actualizacion"] = datetime.now()
 
