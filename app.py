@@ -184,12 +184,13 @@ def autenticar_siigo(username: str, access_key: str) -> dict:
         return {"success": False, "error": f"Error de conexión: {str(e)}"}
 
 
-def obtener_todos_los_productos_siigo(token: str) -> dict:
+def obtener_todos_los_productos_siigo(token: str, solo_con_stock: bool = True) -> dict:
     """
-    Obtiene TODOS los productos de Siigo con paginación.
+    Obtiene productos de Siigo con paginación y filtros.
 
     Args:
         token: Token de autenticación
+        solo_con_stock: Si True, solo obtiene productos con stock > 0
 
     Returns:
         dict: Lista de todos los productos
@@ -208,7 +209,14 @@ def obtener_todos_los_productos_siigo(token: str) -> dict:
 
     try:
         while True:
-            params = {"page": page, "page_size": page_size}
+            params = {
+                "page": page, 
+                "page_size": page_size
+            }
+            
+            # Agregar filtro de stock si está habilitado
+            if solo_con_stock:
+                params["available_quantity[gt]"] = 0  # Mayor que 0
 
             response = requests.get(url, headers=headers, params=params, timeout=60)
 
@@ -221,6 +229,24 @@ def obtener_todos_los_productos_siigo(token: str) -> dict:
                     productos_pagina = data
                 elif isinstance(data, dict) and "results" in data:
                     productos_pagina = data["results"]
+
+                # Filtrar productos con stock si la API no lo hizo
+                if solo_con_stock:
+                    productos_filtrados = []
+                    for p in productos_pagina:
+                        stock = 0
+                        if "available_quantity" in p:
+                            stock = float(p.get("available_quantity", 0))
+                        elif "stock" in p:
+                            stock = float(p.get("stock", 0))
+                        elif "warehouses" in p and isinstance(p["warehouses"], list):
+                            for bodega in p["warehouses"]:
+                                stock += float(bodega.get("quantity", 0))
+                        
+                        if stock > 0:
+                            productos_filtrados.append(p)
+                    
+                    productos_pagina = productos_filtrados
 
                 # Si no hay más productos, salir del loop
                 if not productos_pagina or len(productos_pagina) == 0:
@@ -243,7 +269,7 @@ def obtener_todos_los_productos_siigo(token: str) -> dict:
         return {"success": True, "data": todos_productos, "total": len(todos_productos)}
 
     except requests.exceptions.RequestException as e:
-        return {"success": False, "error": f"Error de conexión: {str(e)}"}
+        return {"success": False, "error": f"Error de conexión: {str(e)}"}}
 
 
 # ============================================================================
@@ -377,6 +403,112 @@ def cargar_inventario_guardado(usuario_email: str):
             return None
     except Exception as e:
         st.error(f"Error al cargar desde Google Sheets: {str(e)}")
+        return None
+
+
+def guardar_productos_siigo(productos_siigo: list):
+    """
+    Guarda los productos de Siigo en Google Sheets (caché compartido).
+
+    Args:
+        productos_siigo: Lista de productos de Siigo
+    """
+    try:
+        client = conectar_google_sheets()
+        if client is None:
+            return False
+
+        spreadsheet = obtener_o_crear_spreadsheet(client)
+        worksheet_name = "Cache_Siigo_Productos"
+
+        try:
+            worksheet = spreadsheet.worksheet(worksheet_name)
+            worksheet.clear()
+        except gspread.WorksheetNotFound:
+            worksheet = spreadsheet.add_worksheet(
+                title=worksheet_name, rows=5000, cols=10
+            )
+
+        # Convertir productos a DataFrame
+        df_siigo = procesar_productos_siigo(productos_siigo)
+        
+        if len(df_siigo) == 0:
+            return False
+
+        # Convertir DataFrame a lista de listas
+        data = [df_siigo.columns.tolist()] + df_siigo.values.tolist()
+
+        # Guardar en Google Sheets
+        worksheet.update("A1", data)
+
+        # Guardar metadatos (fecha de actualización y total)
+        metadata = [
+            ["ultima_actualizacion", datetime.now().strftime("%Y-%m-%d %H:%M:%S")],
+            ["total_productos", len(productos_siigo)]
+        ]
+        worksheet.update("Z1", metadata)
+
+        return True
+    except Exception as e:
+        st.warning(f"No se pudieron guardar productos de Siigo: {str(e)}")
+        return False
+
+
+def cargar_productos_siigo_guardados():
+    """
+    Carga los productos de Siigo guardados desde Google Sheets.
+
+    Returns:
+        tuple: (DataFrame procesado, lista de productos raw, timestamp) o None
+    """
+    try:
+        client = conectar_google_sheets()
+        if client is None:
+            return None
+
+        spreadsheet = obtener_o_crear_spreadsheet(client)
+        worksheet_name = "Cache_Siigo_Productos"
+
+        try:
+            worksheet = spreadsheet.worksheet(worksheet_name)
+            
+            # Obtener metadatos
+            metadata = worksheet.get("Z1:Z2")
+            if not metadata or len(metadata) < 2:
+                return None
+                
+            ultima_actualizacion_str = metadata[0][0] if len(metadata[0]) > 0 else None
+            
+            if not ultima_actualizacion_str:
+                return None
+            
+            # Verificar si los datos tienen menos de 24 horas
+            ultima_actualizacion = datetime.strptime(ultima_actualizacion_str, "%Y-%m-%d %H:%M:%S")
+            horas_transcurridas = (datetime.now() - ultima_actualizacion).total_seconds() / 3600
+            
+            if horas_transcurridas > 24:
+                return None  # Datos muy antiguos
+            
+            # Cargar datos
+            data = worksheet.get_all_values()
+
+            if len(data) <= 1:
+                return None
+
+            # Convertir a DataFrame
+            df_siigo = pd.DataFrame(data[1:], columns=data[0])
+            
+            # Convertir columna stock_actual a numérico
+            if "stock_actual" in df_siigo.columns:
+                df_siigo["stock_actual"] = pd.to_numeric(
+                    df_siigo["stock_actual"], errors="coerce"
+                ).fillna(0)
+
+            return (df_siigo, None, ultima_actualizacion)
+            
+        except gspread.WorksheetNotFound:
+            return None
+    except Exception as e:
         return None
 
 
@@ -898,48 +1030,76 @@ def main():
                 if not st.session_state.get("usando_guardado", False):
                     st.info(f"📋 Usando Excel en sesión: **{len(df_excel)} productos**")
 
-            # Obtener datos de Siigo (siempre actualizar o si se forzó)
+            # Obtener datos de Siigo (intentar cargar guardados primero)
             if (
                 "df_siigo_cache" not in st.session_state
                 or "forzar_actualizacion" in st.session_state
             ):
-                st.info("🔄 Obteniendo productos de Siigo...")
+                # Intentar cargar datos guardados en Google Sheets
+                datos_guardados = None
+                if "forzar_actualizacion" not in st.session_state:
+                    with st.spinner("🔍 Buscando datos de Siigo guardados..."):
+                        datos_guardados = cargar_productos_siigo_guardados()
+                
+                if datos_guardados is not None:
+                    # Usar datos guardados
+                    df_siigo, _, ultima_actualizacion = datos_guardados
+                    productos_siigo = []  # No tenemos los productos raw guardados
+                    total_obtenidos = len(df_siigo)
+                    
+                    st.session_state["df_siigo_cache"] = df_siigo
+                    st.session_state["productos_siigo_cache"] = productos_siigo
+                    st.session_state["total_obtenidos"] = total_obtenidos
+                    st.session_state["ultima_actualizacion"] = ultima_actualizacion
+                    
+                    st.success(f"✅ **{total_obtenidos} productos con stock** cargados desde la nube")
+                    st.info(f"⏰ Última actualización: {ultima_actualizacion.strftime('%d/%m/%Y %H:%M:%S')}")
+                else:
+                    # Obtener datos frescos de Siigo
+                    st.info("🔄 Obteniendo productos con stock de Siigo...")
 
-                with st.spinner("Descargando productos de Siigo con paginación..."):
-                    resultado = obtener_todos_los_productos_siigo(
-                        st.session_state["token_siigo"]
-                    )
+                    with st.spinner("Descargando solo productos con stock..."):
+                        resultado = obtener_todos_los_productos_siigo(
+                            st.session_state["token_siigo"],
+                            solo_con_stock=True  # Solo productos con stock > 0
+                        )
 
-                if not resultado["success"]:
-                    st.error(resultado["error"])
-                    st.stop()
+                    if not resultado["success"]:
+                        st.error(resultado["error"])
+                        st.stop()
 
-                productos_siigo = resultado["data"]
-                total_obtenidos = resultado.get("total", len(productos_siigo))
+                    productos_siigo = resultado["data"]
+                    total_obtenidos = resultado.get("total", len(productos_siigo))
 
-                with st.spinner("⚙️ Procesando productos..."):
-                    df_siigo = procesar_productos_siigo(productos_siigo)
+                    with st.spinner("⚙️ Procesando productos..."):
+                        df_siigo = procesar_productos_siigo(productos_siigo)
 
-                # Guardar en cache
-                st.session_state["df_siigo_cache"] = df_siigo
-                st.session_state["productos_siigo_cache"] = productos_siigo
-                st.session_state["total_obtenidos"] = total_obtenidos
+                    # Guardar en cache de sesión
+                    st.session_state["df_siigo_cache"] = df_siigo
+                    st.session_state["productos_siigo_cache"] = productos_siigo
+                    st.session_state["total_obtenidos"] = total_obtenidos
+                    st.session_state["ultima_actualizacion"] = datetime.now()
 
-                st.success(f"✅ **{total_obtenidos} productos** obtenidos de Siigo")
-                st.success(f"✅ **{len(df_siigo)} productos** procesados correctamente")
+                    st.success(f"✅ **{total_obtenidos} productos con stock** obtenidos de Siigo")
+                    st.success(f"✅ **{len(df_siigo)} productos** procesados correctamente")
+                    
+                    # Guardar en Google Sheets para próximas sesiones
+                    with st.spinner("💾 Guardando en la nube..."):
+                        if guardar_productos_siigo(productos_siigo):
+                            st.success("✅ Datos guardados en Google Sheets")
 
                 # Limpiar flag de actualización
                 if "forzar_actualizacion" in st.session_state:
                     del st.session_state["forzar_actualizacion"]
             else:
-                # Usar datos en cache
+                # Usar datos en cache de sesión
                 df_siigo = st.session_state["df_siigo_cache"]
-                productos_siigo = st.session_state["productos_siigo_cache"]
+                productos_siigo = st.session_state.get("productos_siigo_cache", [])
                 total_obtenidos = st.session_state.get(
-                    "total_obtenidos", len(productos_siigo)
+                    "total_obtenidos", len(df_siigo)
                 )
                 st.info(
-                    f"📊 Usando datos guardados de Siigo: **{len(df_siigo)} productos**"
+                    f"📊 Usando datos en memoria: **{len(df_siigo)} productos con stock**"
                 )
 
             # Mostrar última actualización
