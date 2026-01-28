@@ -26,7 +26,7 @@ SIIGO_ACCESS_KEY = "MmQzMDk0NjYtZjc3Ny00YzU0LWFmNDMtMjhiYzcxNGM5NTBhOnoyeTk5KE4u
 # ============================================================================
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive"
+    "https://www.googleapis.com/auth/drive",
 ]
 
 # Nombre de la hoja de cálculo (se creará si no existe)
@@ -201,50 +201,47 @@ def obtener_todos_los_productos_siigo(token: str) -> dict:
         "Content-Type": "application/json",
         "Partner-Id": "ColsaborApp",
     }
-    
+
     todos_productos = []
     page = 1
     page_size = 100  # Aumentar tamaño de página para menos requests
-    
+
     try:
         while True:
-            params = {
-                "page": page,
-                "page_size": page_size
-            }
-            
+            params = {"page": page, "page_size": page_size}
+
             response = requests.get(url, headers=headers, params=params, timeout=60)
 
             if response.status_code == 200:
                 data = response.json()
-                
+
                 # Manejar diferentes formatos de respuesta
                 productos_pagina = []
                 if isinstance(data, list):
                     productos_pagina = data
                 elif isinstance(data, dict) and "results" in data:
                     productos_pagina = data["results"]
-                
+
                 # Si no hay más productos, salir del loop
                 if not productos_pagina or len(productos_pagina) == 0:
                     break
-                
+
                 todos_productos.extend(productos_pagina)
-                
+
                 # Si obtuvimos menos productos que el page_size, es la última página
                 if len(productos_pagina) < page_size:
                     break
-                
+
                 page += 1
-                
+
             else:
                 return {
                     "success": False,
                     "error": f"Error al obtener productos: {response.status_code} - {response.text}",
                 }
-        
+
         return {"success": True, "data": todos_productos, "total": len(todos_productos)}
-        
+
     except requests.exceptions.RequestException as e:
         return {"success": False, "error": f"Error de conexión: {str(e)}"}
 
@@ -257,7 +254,7 @@ def obtener_todos_los_productos_siigo(token: str) -> dict:
 def conectar_google_sheets():
     """
     Conecta con Google Sheets usando credenciales de Streamlit Secrets.
-    
+
     Returns:
         gspread.Client: Cliente autenticado de Google Sheets o None
     """
@@ -266,8 +263,7 @@ def conectar_google_sheets():
         if "gcp_service_account" in st.secrets:
             credentials_dict = dict(st.secrets["gcp_service_account"])
             credentials = Credentials.from_service_account_info(
-                credentials_dict,
-                scopes=SCOPES
+                credentials_dict, scopes=SCOPES
             )
             client = gspread.authorize(credentials)
             return client
@@ -281,10 +277,10 @@ def conectar_google_sheets():
 def obtener_o_crear_spreadsheet(client):
     """
     Obtiene la hoja de cálculo o la crea si no existe.
-    
+
     Args:
         client: Cliente de Google Sheets autenticado
-        
+
     Returns:
         gspread.Spreadsheet: Hoja de cálculo
     """
@@ -296,14 +292,14 @@ def obtener_o_crear_spreadsheet(client):
         spreadsheet = client.create(SPREADSHEET_NAME)
         # Compartir con el usuario (opcional)
         # spreadsheet.share('usuario@colsabor.com.co', perm_type='user', role='writer')
-    
+
     return spreadsheet
 
 
 def guardar_inventario_excel(usuario_email: str, df_excel: pd.DataFrame):
     """
     Guarda el inventario Excel del usuario en Google Sheets.
-    
+
     Args:
         usuario_email: Email del usuario
         df_excel: DataFrame con el inventario del Excel
@@ -313,27 +309,29 @@ def guardar_inventario_excel(usuario_email: str, df_excel: pd.DataFrame):
         if client is None:
             st.warning("⚠️ Google Sheets no configurado. Los datos no se guardarán.")
             return False
-        
+
         spreadsheet = obtener_o_crear_spreadsheet(client)
-        
+
         # Crear o actualizar worksheet para el usuario
         worksheet_name = f"Inventario_{usuario_email.split('@')[0]}"
-        
+
         try:
             worksheet = spreadsheet.worksheet(worksheet_name)
             worksheet.clear()
         except gspread.WorksheetNotFound:
-            worksheet = spreadsheet.add_worksheet(title=worksheet_name, rows=1000, cols=20)
-        
+            worksheet = spreadsheet.add_worksheet(
+                title=worksheet_name, rows=1000, cols=20
+            )
+
         # Convertir DataFrame a lista de listas
         data = [df_excel.columns.tolist()] + df_excel.values.tolist()
-        
+
         # Guardar en Google Sheets
-        worksheet.update('A1', data)
-        
+        worksheet.update("A1", data)
+
         # Guardar metadatos (fecha de actualización)
-        worksheet.update('Z1', [[datetime.now().strftime('%Y-%m-%d %H:%M:%S')]])
-        
+        worksheet.update("Z1", [[datetime.now().strftime("%Y-%m-%d %H:%M:%S")]])
+
         return True
     except Exception as e:
         st.error(f"Error al guardar en Google Sheets: {str(e)}")
@@ -343,10 +341,10 @@ def guardar_inventario_excel(usuario_email: str, df_excel: pd.DataFrame):
 def cargar_inventario_guardado(usuario_email: str):
     """
     Carga el inventario guardado del usuario desde Google Sheets.
-    
+
     Args:
         usuario_email: Email del usuario
-        
+
     Returns:
         pd.DataFrame: DataFrame con el inventario o None si no existe
     """
@@ -354,24 +352,26 @@ def cargar_inventario_guardado(usuario_email: str):
         client = conectar_google_sheets()
         if client is None:
             return None
-        
+
         spreadsheet = obtener_o_crear_spreadsheet(client)
         worksheet_name = f"Inventario_{usuario_email.split('@')[0]}"
-        
+
         try:
             worksheet = spreadsheet.worksheet(worksheet_name)
             data = worksheet.get_all_values()
-            
+
             if len(data) <= 1:
                 return None
-            
+
             # Convertir a DataFrame
             df = pd.DataFrame(data[1:], columns=data[0])
-            
+
             # Convertir columna de inventario_minimo a numérico
-            if 'inventario_minimo' in df.columns:
-                df['inventario_minimo'] = pd.to_numeric(df['inventario_minimo'], errors='coerce')
-            
+            if "inventario_minimo" in df.columns:
+                df["inventario_minimo"] = pd.to_numeric(
+                    df["inventario_minimo"], errors="coerce"
+                )
+
             return df
         except gspread.WorksheetNotFound:
             return None
@@ -464,7 +464,7 @@ def procesar_productos_siigo(productos: list) -> pd.DataFrame:
         # Extraer información relevante
         referencia = producto.get("code", "")
         nombre = producto.get("name", "")
-        
+
         # Si no tiene código o nombre, saltar
         if not referencia or not nombre:
             continue
@@ -492,8 +492,10 @@ def procesar_productos_siigo(productos: list) -> pd.DataFrame:
 
     # Crear DataFrame vacío con las columnas correctas si no hay datos
     if len(datos) == 0:
-        return pd.DataFrame(columns=["referencia_siigo", "nombre_siigo", "stock_actual"])
-    
+        return pd.DataFrame(
+            columns=["referencia_siigo", "nombre_siigo", "stock_actual"]
+        )
+
     return pd.DataFrame(datos)
 
 
@@ -729,9 +731,9 @@ def main():
     # Autenticación (solo si no está autenticado)
     if "token_siigo" not in st.session_state:
         st.markdown("<br>", unsafe_allow_html=True)
-        
+
         col1, col2, col3 = st.columns([1, 2, 1])
-        
+
         with col2:
             st.markdown(
                 """
@@ -742,23 +744,27 @@ def main():
                 """,
                 unsafe_allow_html=True,
             )
-            
+
             usuario_email = st.text_input(
                 "📧 Usuario de Siigo",
                 placeholder="tu.usuario@colsabor.com.co",
                 key="email_input",
-                help="Tu correo de usuario registrado en Siigo"
+                help="Tu correo de usuario registrado en Siigo",
             )
-            
+
             st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
-            
+
             col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
             with col_btn2:
-                if st.button("🚀 Conectar a Siigo", use_container_width=True, type="primary"):
+                if st.button(
+                    "🚀 Conectar a Siigo", use_container_width=True, type="primary"
+                ):
                     if usuario_email:
                         with st.spinner("🔄 Autenticando con Siigo..."):
                             # Usar el email del usuario + Access Key compartido de la empresa
-                            resultado = autenticar_siigo(usuario_email, SIIGO_ACCESS_KEY)
+                            resultado = autenticar_siigo(
+                                usuario_email, SIIGO_ACCESS_KEY
+                            )
                             if resultado["success"]:
                                 st.session_state["token_siigo"] = resultado["token"]
                                 st.session_state["usuario_email"] = usuario_email
@@ -766,73 +772,89 @@ def main():
                                 st.balloons()
                                 st.rerun()
                             else:
-                                st.error("❌ Error de autenticación. Verifica tu usuario.")
+                                st.error(
+                                    "❌ Error de autenticación. Verifica tu usuario."
+                                )
                                 with st.expander("Ver detalles del error"):
                                     st.code(resultado.get("error", "Error desconocido"))
                     else:
                         st.warning("⚠️ Por favor ingresa tu usuario")
-            
+
             st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
-            
+
             st.info("💡 **Usa tu correo registrado en Siigo**")
-        
+
         st.stop()
-    
+
     # Usuario autenticado - mostrar barra superior con actualización automática
     col1, col2, col3 = st.columns([3, 1, 1])
     with col1:
-        st.markdown(f"👤 **Usuario:** {st.session_state.get('usuario_email', 'Usuario')}")
+        st.markdown(
+            f"👤 **Usuario:** {st.session_state.get('usuario_email', 'Usuario')}"
+        )
     with col2:
         # Botón de actualizar manualmente
-        if st.button("🔄 Actualizar", use_container_width=True, help="Actualizar datos de Siigo"):
-            if "ultimo_excel" in st.session_state and st.session_state["ultimo_excel"] is not None:
+        if st.button(
+            "🔄 Actualizar", use_container_width=True, help="Actualizar datos de Siigo"
+        ):
+            if (
+                "ultimo_excel" in st.session_state
+                and st.session_state["ultimo_excel"] is not None
+            ):
                 st.session_state["forzar_actualizacion"] = True
                 st.rerun()
     with col3:
-    with col2:
         if st.button("🚪 Cerrar Sesión", use_container_width=True):
             # Limpiar toda la sesión
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()
-    
+
     st.markdown("---")
 
     # Área de carga de archivo
     st.markdown("### 📤 Cargar Inventario Mínimo")
-    
+
     # Intentar cargar inventario guardado del usuario
-    usuario_email = st.session_state.get('usuario_email', '')
+    usuario_email = st.session_state.get("usuario_email", "")
     inventario_guardado = None
-    
+
     if usuario_email:
         with st.spinner("🔍 Buscando inventario guardado..."):
             inventario_guardado = cargar_inventario_guardado(usuario_email)
-    
+
     col1, col2 = st.columns([3, 1])
 
     with col1:
         # Mostrar si hay inventario guardado
         if inventario_guardado is not None:
-            st.success(f"✅ Inventario guardado encontrado: **{len(inventario_guardado)} productos**")
-            usar_guardado = st.checkbox("📁 Usar inventario guardado", value=True, help="Desmarca para subir un nuevo archivo")
-            
+            st.success(
+                f"✅ Inventario guardado encontrado: **{len(inventario_guardado)} productos**"
+            )
+            usar_guardado = st.checkbox(
+                "📁 Usar inventario guardado",
+                value=True,
+                help="Desmarca para subir un nuevo archivo",
+            )
+
             if usar_guardado:
                 archivo_excel = None
                 st.session_state["df_excel_cache"] = inventario_guardado
                 st.session_state["usando_guardado"] = True
             else:
                 st.session_state["usando_guardado"] = False
-        
+
         # Si no usa guardado o no hay guardado, mostrar uploader
-        if inventario_guardado is None or not st.session_state.get("usando_guardado", False):
+        if inventario_guardado is None or not st.session_state.get(
+            "usando_guardado", False
+        ):
             archivo_excel = st.file_uploader(
                 "Sube tu archivo Excel con el inventario mínimo",
                 type=["xlsx", "xls"],
                 help="El archivo debe contener: Referencia, Nombre, Inventario Mínimo por gramos",
-                label_visibility="collapsed"
+                label_visibility="collapsed",
             )
-            
+
             # Guardar el archivo en la sesión
             if archivo_excel is not None:
                 st.session_state["ultimo_excel"] = archivo_excel
@@ -854,13 +876,17 @@ def main():
     if archivo_excel or st.session_state.get("usando_guardado", False):
         try:
             # Cargar Excel solo si es nuevo o se forzó actualización
-            if "df_excel_cache" not in st.session_state or ("forzar_actualizacion" in st.session_state and archivo_excel):
+            if "df_excel_cache" not in st.session_state or (
+                "forzar_actualizacion" in st.session_state and archivo_excel
+            ):
                 if archivo_excel:
                     with st.spinner("📂 Cargando archivo Excel..."):
                         df_excel = cargar_excel(archivo_excel)
                         st.session_state["df_excel_cache"] = df_excel
-                    st.success(f"✅ Excel cargado: **{len(df_excel)} productos** encontrados")
-                    
+                    st.success(
+                        f"✅ Excel cargado: **{len(df_excel)} productos** encontrados"
+                    )
+
                     # Guardar en Google Sheets automáticamente
                     with st.spinner("💾 Guardando en la nube..."):
                         if guardar_inventario_excel(usuario_email, df_excel):
@@ -873,7 +899,10 @@ def main():
                     st.info(f"📋 Usando Excel en sesión: **{len(df_excel)} productos**")
 
             # Obtener datos de Siigo (siempre actualizar o si se forzó)
-            if "df_siigo_cache" not in st.session_state or "forzar_actualizacion" in st.session_state:
+            if (
+                "df_siigo_cache" not in st.session_state
+                or "forzar_actualizacion" in st.session_state
+            ):
                 st.info("🔄 Obteniendo productos de Siigo...")
 
                 with st.spinner("Descargando productos de Siigo con paginación..."):
@@ -887,18 +916,18 @@ def main():
 
                 productos_siigo = resultado["data"]
                 total_obtenidos = resultado.get("total", len(productos_siigo))
-                
+
                 with st.spinner("⚙️ Procesando productos..."):
                     df_siigo = procesar_productos_siigo(productos_siigo)
-                
+
                 # Guardar en cache
                 st.session_state["df_siigo_cache"] = df_siigo
                 st.session_state["productos_siigo_cache"] = productos_siigo
                 st.session_state["total_obtenidos"] = total_obtenidos
-                
+
                 st.success(f"✅ **{total_obtenidos} productos** obtenidos de Siigo")
                 st.success(f"✅ **{len(df_siigo)} productos** procesados correctamente")
-                
+
                 # Limpiar flag de actualización
                 if "forzar_actualizacion" in st.session_state:
                     del st.session_state["forzar_actualizacion"]
@@ -906,29 +935,32 @@ def main():
                 # Usar datos en cache
                 df_siigo = st.session_state["df_siigo_cache"]
                 productos_siigo = st.session_state["productos_siigo_cache"]
-                total_obtenidos = st.session_state.get("total_obtenidos", len(productos_siigo))
-                st.info(f"📊 Usando datos guardados de Siigo: **{len(df_siigo)} productos**")
-            
+                total_obtenidos = st.session_state.get(
+                    "total_obtenidos", len(productos_siigo)
+                )
+                st.info(
+                    f"📊 Usando datos guardados de Siigo: **{len(df_siigo)} productos**"
+                )
+
             # Mostrar última actualización
             from datetime import datetime
+
             if "ultima_actualizacion" not in st.session_state:
                 st.session_state["ultima_actualizacion"] = datetime.now()
-            
+
             col_update1, col_update2 = st.columns([3, 1])
             with col_update1:
-                st.caption(f"⏰ Última actualización: {st.session_state['ultima_actualizacion'].strftime('%d/%m/%Y %H:%M:%S')}")
-            
+                st.caption(
+                    f"⏰ Última actualización: {st.session_state['ultima_actualizacion'].strftime('%d/%m/%Y %H:%M:%S')}"
+                )
+
             # Actualizar timestamp
             st.session_state["ultima_actualizacion"] = datetime.now()
 
             # Debug: Mostrar información de productos obtenidos
             with st.expander("🔍 Ver detalles técnicos"):
-                st.write(
-                    f"Total productos obtenidos de API: {total_obtenidos}"
-                )
-                st.write(
-                    f"Total productos procesados válidos: {len(df_siigo)}"
-                )
+                st.write(f"Total productos obtenidos de API: {total_obtenidos}")
+                st.write(f"Total productos procesados válidos: {len(df_siigo)}")
                 if len(productos_siigo) > 0:
                     st.write("Ejemplo del primer producto:")
                     st.json(productos_siigo[0])
@@ -964,7 +996,7 @@ def main():
                     criticos,
                     delta=f"-{criticos}" if criticos > 0 else "0",
                     delta_color="inverse",
-                    help="Productos por debajo del inventario mínimo"
+                    help="Productos por debajo del inventario mínimo",
                 )
             with col3:
                 st.metric("🟡 Bajos", bajos, help="Productos con stock bajo")
@@ -972,21 +1004,23 @@ def main():
                 st.metric("🟢 OK", ok, help="Productos con stock suficiente")
 
             if no_encontrados > 0:
-                st.warning(f"⚠️ **{no_encontrados} producto(s)** no encontrado(s) en Siigo")
-                
+                st.warning(
+                    f"⚠️ **{no_encontrados} producto(s)** no encontrado(s) en Siigo"
+                )
+
                 # Mostrar lista de productos no encontrados
                 with st.expander("📋 Ver productos no encontrados en Siigo"):
                     df_no_encontrados = df_resultado[
                         df_resultado["Estado"].str.contains("No encontrado")
                     ][["Referencia", "Nombre", "Mínimo (g)"]].copy()
-                    
+
                     st.dataframe(
-                        df_no_encontrados,
-                        use_container_width=True,
-                        hide_index=True
+                        df_no_encontrados, use_container_width=True, hide_index=True
                     )
-                    
-                    st.info("💡 Verifica que estas referencias existan en Siigo o actualiza el Excel")
+
+                    st.info(
+                        "💡 Verifica que estas referencias existan en Siigo o actualiza el Excel"
+                    )
 
             st.markdown("---")
 
@@ -1006,10 +1040,11 @@ def main():
                     ],
                     default=["🔴 Crítico", "🟡 Bajo"],
                 )
-                
 
             with col2:
-                buscar = st.text_input("🔎 Buscar", placeholder="Nombre o referencia...")
+                buscar = st.text_input(
+                    "🔎 Buscar", placeholder="Nombre o referencia..."
+                )
 
             # Aplicar filtros
             df_filtrado = df_resultado.copy()
@@ -1109,9 +1144,13 @@ def main():
             # Vista previa
             with st.expander("👁️ Vista previa de faltantes"):
                 if len(df_faltantes) > 0:
-                    st.dataframe(df_faltantes, use_container_width=True, hide_index=True)
+                    st.dataframe(
+                        df_faltantes, use_container_width=True, hide_index=True
+                    )
                 else:
-                    st.success("🎉 ¡Excelente! No hay productos con stock crítico o bajo.")
+                    st.success(
+                        "🎉 ¡Excelente! No hay productos con stock crítico o bajo."
+                    )
 
         except ValueError as e:
             st.error(f"❌ {str(e)}")
@@ -1123,10 +1162,12 @@ def main():
     else:
         # Pantalla de bienvenida cuando no hay archivo
         st.markdown("<br>", unsafe_allow_html=True)
-        
+
         col1, col2, col3 = st.columns([1, 3, 1])
         with col2:
-            st.info("👆 **Sube un archivo Excel** para comenzar el análisis de inventario")
+            st.info(
+                "👆 **Sube un archivo Excel** para comenzar el análisis de inventario"
+            )
 
         with st.expander("📝 Ver ejemplo de formato Excel"):
             st.markdown("**Formato requerido del archivo:**")
