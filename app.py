@@ -184,13 +184,12 @@ def autenticar_siigo(username: str, access_key: str) -> dict:
         return {"success": False, "error": f"Error de conexión: {str(e)}"}
 
 
-def obtener_todos_los_productos_siigo(token: str, solo_con_stock: bool = True) -> dict:
+def obtener_todos_los_productos_siigo(token: str) -> dict:
     """
-    Obtiene productos de Siigo con paginación y filtros.
+    Obtiene TODOS los productos de Siigo con paginación.
 
     Args:
         token: Token de autenticación
-        solo_con_stock: Si True, solo obtiene productos con stock > 0
 
     Returns:
         dict: Lista de todos los productos
@@ -209,14 +208,7 @@ def obtener_todos_los_productos_siigo(token: str, solo_con_stock: bool = True) -
 
     try:
         while True:
-            params = {
-                "page": page, 
-                "page_size": page_size
-            }
-            
-            # Agregar filtro de stock si está habilitado
-            if solo_con_stock:
-                params["available_quantity[gt]"] = 0  # Mayor que 0
+            params = {"page": page, "page_size": page_size}
 
             response = requests.get(url, headers=headers, params=params, timeout=60)
 
@@ -229,24 +221,6 @@ def obtener_todos_los_productos_siigo(token: str, solo_con_stock: bool = True) -
                     productos_pagina = data
                 elif isinstance(data, dict) and "results" in data:
                     productos_pagina = data["results"]
-
-                # Filtrar productos con stock si la API no lo hizo
-                if solo_con_stock:
-                    productos_filtrados = []
-                    for p in productos_pagina:
-                        stock = 0
-                        if "available_quantity" in p:
-                            stock = float(p.get("available_quantity", 0))
-                        elif "stock" in p:
-                            stock = float(p.get("stock", 0))
-                        elif "warehouses" in p and isinstance(p["warehouses"], list):
-                            for bodega in p["warehouses"]:
-                                stock += float(bodega.get("quantity", 0))
-                        
-                        if stock > 0:
-                            productos_filtrados.append(p)
-                    
-                    productos_pagina = productos_filtrados
 
                 # Si no hay más productos, salir del loop
                 if not productos_pagina or len(productos_pagina) == 0:
@@ -1052,16 +1026,15 @@ def main():
                     st.session_state["total_obtenidos"] = total_obtenidos
                     st.session_state["ultima_actualizacion"] = ultima_actualizacion
                     
-                    st.success(f"✅ **{total_obtenidos} productos con stock** cargados desde la nube")
+                    st.success(f"✅ **{total_obtenidos} productos** cargados desde la nube")
                     st.info(f"⏰ Última actualización: {ultima_actualizacion.strftime('%d/%m/%Y %H:%M:%S')}")
                 else:
                     # Obtener datos frescos de Siigo
-                    st.info("🔄 Obteniendo productos con stock de Siigo...")
+                    st.info("🔄 Obteniendo productos de Siigo...")
 
-                    with st.spinner("Descargando solo productos con stock..."):
+                    with st.spinner("Descargando productos de Siigo con paginación..."):
                         resultado = obtener_todos_los_productos_siigo(
-                            st.session_state["token_siigo"],
-                            solo_con_stock=True  # Solo productos con stock > 0
+                            st.session_state["token_siigo"]
                         )
 
                     if not resultado["success"]:
@@ -1080,7 +1053,7 @@ def main():
                     st.session_state["total_obtenidos"] = total_obtenidos
                     st.session_state["ultima_actualizacion"] = datetime.now()
 
-                    st.success(f"✅ **{total_obtenidos} productos con stock** obtenidos de Siigo")
+                    st.success(f"✅ **{total_obtenidos} productos** obtenidos de Siigo")
                     st.success(f"✅ **{len(df_siigo)} productos** procesados correctamente")
                     
                     # Guardar en Google Sheets para próximas sesiones
@@ -1099,7 +1072,7 @@ def main():
                     "total_obtenidos", len(df_siigo)
                 )
                 st.info(
-                    f"📊 Usando datos en memoria: **{len(df_siigo)} productos con stock**"
+                    f"📊 Usando datos en memoria: **{len(df_siigo)} productos**"
                 )
 
             # Mostrar última actualización
