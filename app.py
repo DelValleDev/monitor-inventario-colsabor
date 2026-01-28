@@ -243,7 +243,7 @@ def obtener_todos_los_productos_siigo(token: str) -> dict:
         return {"success": True, "data": todos_productos, "total": len(todos_productos)}
 
     except requests.exceptions.RequestException as e:
-        return {"success": False, "error": f"Error de conexión: {str(e)}"}}
+        return {"success": False, "error": f"Error de conexión: {str(e)}"}
 
 
 # ============================================================================
