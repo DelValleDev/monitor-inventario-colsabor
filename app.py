@@ -9,6 +9,9 @@ import requests
 from datetime import datetime
 import base64
 from io import BytesIO
+import gspread
+from google.oauth2.service_account import Credentials
+import json
 
 # ============================================================================
 # CONFIGURACIÓN DE CREDENCIALES SIIGO API
@@ -17,6 +20,17 @@ from io import BytesIO
 SIIGO_API_BASE_URL = "https://api.siigo.com/v1"
 # Access Key compartido de la empresa (mismo para todos)
 SIIGO_ACCESS_KEY = "MmQzMDk0NjYtZjc3Ny00YzU0LWFmNDMtMjhiYzcxNGM5NTBhOnoyeTk5KE4uYkc="
+
+# ============================================================================
+# CONFIGURACIÓN DE GOOGLE SHEETS
+# ============================================================================
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive"
+]
+
+# Nombre de la hoja de cálculo (se creará si no existe)
+SPREADSHEET_NAME = "Colsabor_Inventarios"
 
 # ============================================================================
 # CONFIGURACIÓN DE LA PÁGINA
@@ -233,6 +247,137 @@ def obtener_todos_los_productos_siigo(token: str) -> dict:
         
     except requests.exceptions.RequestException as e:
         return {"success": False, "error": f"Error de conexión: {str(e)}"}
+
+
+# ============================================================================
+# FUNCIONES DE GOOGLE SHEETS (BASE DE DATOS)
+# ============================================================================
+
+
+def conectar_google_sheets():
+    """
+    Conecta con Google Sheets usando credenciales de Streamlit Secrets.
+    
+    Returns:
+        gspread.Client: Cliente autenticado de Google Sheets o None
+    """
+    try:
+        # Obtener credenciales desde Streamlit Secrets
+        if "gcp_service_account" in st.secrets:
+            credentials_dict = dict(st.secrets["gcp_service_account"])
+            credentials = Credentials.from_service_account_info(
+                credentials_dict,
+                scopes=SCOPES
+            )
+            client = gspread.authorize(credentials)
+            return client
+        else:
+            return None
+    except Exception as e:
+        st.error(f"Error al conectar con Google Sheets: {str(e)}")
+        return None
+
+
+def obtener_o_crear_spreadsheet(client):
+    """
+    Obtiene la hoja de cálculo o la crea si no existe.
+    
+    Args:
+        client: Cliente de Google Sheets autenticado
+        
+    Returns:
+        gspread.Spreadsheet: Hoja de cálculo
+    """
+    try:
+        # Intentar abrir la hoja existente
+        spreadsheet = client.open(SPREADSHEET_NAME)
+    except gspread.SpreadsheetNotFound:
+        # Si no existe, crear nueva
+        spreadsheet = client.create(SPREADSHEET_NAME)
+        # Compartir con el usuario (opcional)
+        # spreadsheet.share('usuario@colsabor.com.co', perm_type='user', role='writer')
+    
+    return spreadsheet
+
+
+def guardar_inventario_excel(usuario_email: str, df_excel: pd.DataFrame):
+    """
+    Guarda el inventario Excel del usuario en Google Sheets.
+    
+    Args:
+        usuario_email: Email del usuario
+        df_excel: DataFrame con el inventario del Excel
+    """
+    try:
+        client = conectar_google_sheets()
+        if client is None:
+            st.warning("⚠️ Google Sheets no configurado. Los datos no se guardarán.")
+            return False
+        
+        spreadsheet = obtener_o_crear_spreadsheet(client)
+        
+        # Crear o actualizar worksheet para el usuario
+        worksheet_name = f"Inventario_{usuario_email.split('@')[0]}"
+        
+        try:
+            worksheet = spreadsheet.worksheet(worksheet_name)
+            worksheet.clear()
+        except gspread.WorksheetNotFound:
+            worksheet = spreadsheet.add_worksheet(title=worksheet_name, rows=1000, cols=20)
+        
+        # Convertir DataFrame a lista de listas
+        data = [df_excel.columns.tolist()] + df_excel.values.tolist()
+        
+        # Guardar en Google Sheets
+        worksheet.update('A1', data)
+        
+        # Guardar metadatos (fecha de actualización)
+        worksheet.update('Z1', [[datetime.now().strftime('%Y-%m-%d %H:%M:%S')]])
+        
+        return True
+    except Exception as e:
+        st.error(f"Error al guardar en Google Sheets: {str(e)}")
+        return False
+
+
+def cargar_inventario_guardado(usuario_email: str):
+    """
+    Carga el inventario guardado del usuario desde Google Sheets.
+    
+    Args:
+        usuario_email: Email del usuario
+        
+    Returns:
+        pd.DataFrame: DataFrame con el inventario o None si no existe
+    """
+    try:
+        client = conectar_google_sheets()
+        if client is None:
+            return None
+        
+        spreadsheet = obtener_o_crear_spreadsheet(client)
+        worksheet_name = f"Inventario_{usuario_email.split('@')[0]}"
+        
+        try:
+            worksheet = spreadsheet.worksheet(worksheet_name)
+            data = worksheet.get_all_values()
+            
+            if len(data) <= 1:
+                return None
+            
+            # Convertir a DataFrame
+            df = pd.DataFrame(data[1:], columns=data[0])
+            
+            # Convertir columna de inventario_minimo a numérico
+            if 'inventario_minimo' in df.columns:
+                df['inventario_minimo'] = pd.to_numeric(df['inventario_minimo'], errors='coerce')
+            
+            return df
+        except gspread.WorksheetNotFound:
+            return None
+    except Exception as e:
+        st.error(f"Error al cargar desde Google Sheets: {str(e)}")
+        return None
 
 
 # ============================================================================
@@ -656,22 +801,43 @@ def main():
     # Área de carga de archivo
     st.markdown("### 📤 Cargar Inventario Mínimo")
     
+    # Intentar cargar inventario guardado del usuario
+    usuario_email = st.session_state.get('usuario_email', '')
+    inventario_guardado = None
+    
+    if usuario_email:
+        with st.spinner("🔍 Buscando inventario guardado..."):
+            inventario_guardado = cargar_inventario_guardado(usuario_email)
+    
     col1, col2 = st.columns([3, 1])
 
     with col1:
-        # Usar el último archivo si existe y no se subió uno nuevo
-        archivo_excel = st.file_uploader(
-            "Sube tu archivo Excel con el inventario mínimo",
-            type=["xlsx", "xls"],
-            help="El archivo debe contener: Referencia, Nombre, Inventario Mínimo por gramos",
-            label_visibility="collapsed"
-        )
+        # Mostrar si hay inventario guardado
+        if inventario_guardado is not None:
+            st.success(f"✅ Inventario guardado encontrado: **{len(inventario_guardado)} productos**")
+            usar_guardado = st.checkbox("📁 Usar inventario guardado", value=True, help="Desmarca para subir un nuevo archivo")
+            
+            if usar_guardado:
+                archivo_excel = None
+                st.session_state["df_excel_cache"] = inventario_guardado
+                st.session_state["usando_guardado"] = True
+            else:
+                st.session_state["usando_guardado"] = False
         
-        # Guardar el archivo en la sesión
-        if archivo_excel is not None:
-            st.session_state["ultimo_excel"] = archivo_excel
-        elif "ultimo_excel" in st.session_state:
-            archivo_excel = st.session_state["ultimo_excel"]
+        # Si no usa guardado o no hay guardado, mostrar uploader
+        if inventario_guardado is None or not st.session_state.get("usando_guardado", False):
+            archivo_excel = st.file_uploader(
+                "Sube tu archivo Excel con el inventario mínimo",
+                type=["xlsx", "xls"],
+                help="El archivo debe contener: Referencia, Nombre, Inventario Mínimo por gramos",
+                label_visibility="collapsed"
+            )
+            
+            # Guardar el archivo en la sesión
+            if archivo_excel is not None:
+                st.session_state["ultimo_excel"] = archivo_excel
+            elif "ultimo_excel" in st.session_state:
+                archivo_excel = st.session_state["ultimo_excel"]
 
     with col2:
         with st.expander("📋 Formato requerido"):
@@ -684,18 +850,27 @@ def main():
             """
             )
 
-    # Procesar si hay archivo cargado
-    if archivo_excel:
+    # Procesar si hay archivo cargado o inventario guardado
+    if archivo_excel or st.session_state.get("usando_guardado", False):
         try:
             # Cargar Excel solo si es nuevo o se forzó actualización
-            if "df_excel_cache" not in st.session_state or "forzar_actualizacion" in st.session_state:
-                with st.spinner("📂 Cargando archivo Excel..."):
-                    df_excel = cargar_excel(archivo_excel)
-                    st.session_state["df_excel_cache"] = df_excel
-                st.success(f"✅ Excel cargado: **{len(df_excel)} productos** encontrados")
+            if "df_excel_cache" not in st.session_state or ("forzar_actualizacion" in st.session_state and archivo_excel):
+                if archivo_excel:
+                    with st.spinner("📂 Cargando archivo Excel..."):
+                        df_excel = cargar_excel(archivo_excel)
+                        st.session_state["df_excel_cache"] = df_excel
+                    st.success(f"✅ Excel cargado: **{len(df_excel)} productos** encontrados")
+                    
+                    # Guardar en Google Sheets automáticamente
+                    with st.spinner("💾 Guardando en la nube..."):
+                        if guardar_inventario_excel(usuario_email, df_excel):
+                            st.success("✅ Inventario guardado en Google Sheets")
+                else:
+                    df_excel = st.session_state["df_excel_cache"]
             else:
                 df_excel = st.session_state["df_excel_cache"]
-                st.info(f"📋 Usando Excel guardado: **{len(df_excel)} productos**")
+                if not st.session_state.get("usando_guardado", False):
+                    st.info(f"📋 Usando Excel en sesión: **{len(df_excel)} productos**")
 
             # Obtener datos de Siigo (siempre actualizar o si se forzó)
             if "df_siigo_cache" not in st.session_state or "forzar_actualizacion" in st.session_state:
