@@ -1,0 +1,15 @@
+# Monitor de Inventario Inteligente - Colsabor
+# Dependencias de Python
+
+# Framework web
+streamlit>=1.28.0
+
+# Manipulación de datos
+pandas>=2.0.0
+openpyxl>=3.1.0  # Para leer/escribir Excel
+
+# Peticiones HTTP (API Siigo)
+requests>=2.31.0
+
+# Utilidades
+python-dateutil>=2.8.0
