@@ -849,17 +849,17 @@ def main():
                 """
                 <div class='login-box'>
                     <h3 style='margin-top:0; color: #1976D2;'>🔐 Iniciar Sesión</h3>
-                    <p style='color: #666; margin-bottom: 20px;'>Ingresa tu usuario de Siigo</p>
+                    <p style='color: #666; margin-bottom: 20px;'>Ingresa tu email de Colsabor</p>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
 
             usuario_email = st.text_input(
-                "📧 Usuario de Siigo",
-                placeholder="tu.usuario@colsabor.com.co",
+                "📧 Tu Email",
+                placeholder="gerencia@colsabor.com.co",
                 key="email_input",
-                help="Tu correo de usuario registrado en Siigo",
+                help="Tu correo para identificarte en el sistema",
             )
 
             st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
@@ -867,42 +867,31 @@ def main():
             col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
             with col_btn2:
                 if st.button(
-                    "🚀 Conectar a Siigo", use_container_width=True, type="primary"
+                    "🚀 Conectar", use_container_width=True, type="primary"
                 ):
                     if usuario_email:
-                        with st.spinner("🔄 Autenticando con Siigo..."):
-                            # Usar el email del usuario + Access Key compartido de la empresa
+                        with st.spinner("🔄 Conectando..."):
+                            # Usar siempre el usuario dirtec para obtener el token
+                            # El email ingresado solo sirve para identificar al usuario en Google Sheets
                             resultado = autenticar_siigo(
-                                usuario_email, SIIGO_ACCESS_KEY
+                                "dirtec@colsabor.com.co", SIIGO_ACCESS_KEY
                             )
                             if resultado["success"]:
                                 st.session_state["token_siigo"] = resultado["token"]
-                                st.session_state["usuario_email"] = usuario_email
-                                st.success("✅ Autenticación exitosa")
+                                st.session_state["usuario_email"] = usuario_email  # Guardar el email real del usuario
+                                st.success(f"✅ Bienvenido/a {usuario_email.split('@')[0].title()}")
                                 st.balloons()
                                 st.rerun()
                             else:
-                                # Si falla la autenticación, permitir acceso con token genérico
-                                st.warning("⚠️ No se pudo autenticar con Siigo. Usando acceso compartido...")
-                                # Intentar con un usuario que funcione para obtener token
-                                resultado_backup = autenticar_siigo(
-                                    "admin@colsabor.com.co", SIIGO_ACCESS_KEY
-                                )
-                                if resultado_backup["success"]:
-                                    st.session_state["token_siigo"] = resultado_backup["token"]
-                                    st.session_state["usuario_email"] = usuario_email
-                                    st.success("✅ Acceso concedido")
-                                    st.rerun()
-                                else:
-                                    st.error("❌ Error de conexión. Intenta de nuevo.")
-                                    with st.expander("Ver detalles del error"):
-                                        st.code(resultado.get("error", "Error desconocido"))
+                                st.error("❌ Error de conexión con Siigo. Intenta de nuevo.")
+                                with st.expander("Ver detalles del error"):
+                                    st.code(resultado.get("error", "Error desconocido"))
                     else:
                         st.warning("⚠️ Por favor ingresa tu usuario")
 
             st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
 
-            st.info("💡 **Usa tu correo registrado en Siigo**")
+            st.info("💡 **Cualquier email de Colsabor funciona. Tus datos se guardan por separado.**")
 
         st.stop()
 
