@@ -6,12 +6,9 @@ Aplicación Streamlit para monitorear inventario conectado a Siigo API
 import streamlit as st
 import pandas as pd
 import requests
+import plotly.graph_objects as go
 from datetime import datetime
-import base64
-from io import BytesIO
-import gspread
-from google.oauth2.service_account import Credentials
-import json
+from supabase import create_client
 
 # ============================================================================
 # CONFIGURACIÓN DE CREDENCIALES SIIGO API
@@ -22,131 +19,32 @@ SIIGO_API_BASE_URL = "https://api.siigo.com/v1"
 SIIGO_ACCESS_KEY = "MmQzMDk0NjYtZjc3Ny00YzU0LWFmNDMtMjhiYzcxNGM5NTBhOnoyeTk5KE4uYkc="
 
 # ============================================================================
-# CONFIGURACIÓN DE GOOGLE SHEETS
+# CONFIGURACIÓN DE SUPABASE
 # ============================================================================
-SCOPES = [
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive",
-]
+SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
+SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
 
-# Nombre de la hoja de cálculo (se creará si no existe)
-SPREADSHEET_NAME = "Colsabor_Inventarios"
+# Nombres de las tablas en Supabase
+TABLE_INVENTARIO = "user_inventory"
+TABLE_SIIGO_CACHE = "siigo_products_cache"
+
+# ============================================================================
+# USUARIOS AUTORIZADOS (whitelist)
+# ============================================================================
+ALLOWED_EMAILS = {
+    "dirtec@colsabor.com.co",
+    "gerencia@colsabor.com.co",
+}
 
 # ============================================================================
 # CONFIGURACIÓN DE LA PÁGINA
 # ============================================================================
 st.set_page_config(
-    page_title="Monitor de Inventario - Colsabor",
+    page_title="Monitor de Inventario · Colsabor",
     page_icon="📦",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
-
-# Estilos CSS personalizados - Tema azul moderno
-st.markdown(
-    """
-<style>
-    /* Colores principales */
-    :root {
-        --primary-blue: #2196F3;
-        --primary-blue-light: #64B5F6;
-        --primary-blue-dark: #1976D2;
-        --accent-blue: #03A9F4;
-    }
-    
-    /* Header principal */
-    .header-title {
-        background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
-        color: white !important;
-        text-align: center;
-        padding: 30px;
-        border-radius: 15px;
-        box-shadow: 0 4px 6px rgba(33, 150, 243, 0.3);
-        margin-bottom: 20px;
-    }
-    
-    /* Tarjetas de métricas */
-    .metric-card {
-        background: linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%);
-        border-radius: 15px;
-        padding: 20px;
-        text-align: center;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        transition: transform 0.2s;
-    }
-    
-    .metric-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(33, 150, 243, 0.3);
-    }
-    
-    /* Login box */
-    .login-box {
-        background: linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%);
-        padding: 30px;
-        border-radius: 15px;
-        box-shadow: 0 4px 6px rgba(33, 150, 243, 0.2);
-        text-align: center;
-        margin: 20px auto;
-        max-width: 500px;
-    }
-    
-    /* Botones */
-    .stButton>button {
-        background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%) !important;
-        color: white !important;
-        border: none !important;
-        border-radius: 10px !important;
-        padding: 12px 24px !important;
-        font-weight: 600 !important;
-        box-shadow: 0 2px 4px rgba(33, 150, 243, 0.3) !important;
-        transition: all 0.3s !important;
-    }
-    
-    .stButton>button:hover {
-        transform: translateY(-2px) !important;
-        box-shadow: 0 4px 8px rgba(33, 150, 243, 0.4) !important;
-    }
-    
-    /* DataFrames */
-    .stDataFrame {
-        font-size: 14px;
-        border-radius: 10px;
-        overflow: hidden;
-    }
-    
-    /* Filas críticas en tabla */
-    .critical-row {
-        background-color: #ffcdd2 !important;
-    }
-    
-    /* Modo oscuro */
-    @media (prefers-color-scheme: dark) {
-        .header-title {
-            background: linear-gradient(135deg, #1565C0 0%, #0D47A1 100%);
-        }
-        
-        .metric-card, .login-box {
-            background: linear-gradient(135deg, #1E3A5F 0%, #2C5282 100%);
-            color: #E3F2FD;
-        }
-        
-        .stButton>button {
-            background: linear-gradient(135deg, #1976D2 0%, #0D47A1 100%) !important;
-        }
-    }
-    
-    /* Impresión */
-    @media print {
-        .no-print {
-            display: none !important;
-        }
-    }
-</style>
-""",
-    unsafe_allow_html=True,
-)
-
 
 # ============================================================================
 # FUNCIONES DE AUTENTICACIÓN Y API SIIGO
@@ -247,181 +145,94 @@ def obtener_todos_los_productos_siigo(token: str) -> dict:
 
 
 # ============================================================================
-# FUNCIONES DE GOOGLE SHEETS (BASE DE DATOS)
+# FUNCIONES DE SUPABASE (BASE DE DATOS)
 # ============================================================================
 
 
-def conectar_google_sheets():
-    """
-    Conecta con Google Sheets usando credenciales de Streamlit Secrets.
-
-    Returns:
-        gspread.Client: Cliente autenticado de Google Sheets o None
-    """
+def get_supabase_client():
+    """Inicializa el cliente de Supabase."""
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        st.warning(
+            "⚠️ No se encontraron credenciales de Supabase en secrets. Los datos no se guardarán."
+        )
+        return None
     try:
-        # Obtener credenciales desde Streamlit Secrets
-        if "gcp_service_account" in st.secrets:
-            credentials_dict = dict(st.secrets["gcp_service_account"])
-            credentials = Credentials.from_service_account_info(
-                credentials_dict, scopes=SCOPES
-            )
-            client = gspread.authorize(credentials)
-            return client
-        else:
-            return None
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        return supabase
     except Exception as e:
-        st.error(f"Error al conectar con Google Sheets: {str(e)}")
+        st.error(f"Error al conectar con Supabase: {str(e)}")
         return None
 
 
-def obtener_o_crear_spreadsheet(client):
-    """
-    Obtiene la hoja de cálculo o la crea si no existe.
-
-    Args:
-        client: Cliente de Google Sheets autenticado
-
-    Returns:
-        gspread.Spreadsheet: Hoja de cálculo
-    """
-    try:
-        # Intentar abrir la hoja existente
-        spreadsheet = client.open(SPREADSHEET_NAME)
-    except gspread.SpreadsheetNotFound:
-        # Si no existe, crear nueva
-        spreadsheet = client.create(SPREADSHEET_NAME)
-        # Compartir con el usuario (opcional)
-        # spreadsheet.share('usuario@colsabor.com.co', perm_type='user', role='writer')
-
-    return spreadsheet
-
-
 def guardar_inventario_excel(usuario_email: str, df_excel: pd.DataFrame):
-    """
-    Guarda el inventario Excel del usuario en Google Sheets.
-
-    Args:
-        usuario_email: Email del usuario
-        df_excel: DataFrame con el inventario del Excel
-    """
+    """Guarda el inventario Excel del usuario en Supabase."""
     try:
-        client = conectar_google_sheets()
-        if client is None:
-            st.warning("⚠️ Google Sheets no configurado. Los datos no se guardarán.")
+        supabase = get_supabase_client()
+        if not supabase:
             return False
 
-        spreadsheet = obtener_o_crear_spreadsheet(client)
+        records = df_excel.to_dict(orient="records")
+        data_to_insert = {
+            "usuario_email": usuario_email,
+            "data": records,
+            "updated_at": datetime.now().isoformat(),
+        }
 
-        # Crear o actualizar worksheet para el usuario
-        worksheet_name = f"Inventario_{usuario_email.split('@')[0]}"
-
-        try:
-            worksheet = spreadsheet.worksheet(worksheet_name)
-            worksheet.clear()
-        except gspread.WorksheetNotFound:
-            worksheet = spreadsheet.add_worksheet(
-                title=worksheet_name, rows=1000, cols=20
-            )
-
-        # Convertir DataFrame a lista de listas
-        data = [df_excel.columns.tolist()] + df_excel.values.tolist()
-
-        # Guardar en Google Sheets
-        worksheet.update("A1", data)
-
-        # Guardar metadatos (fecha de actualización)
-        worksheet.update("Z1", [[datetime.now().strftime("%Y-%m-%d %H:%M:%S")]])
-
+        supabase.table(TABLE_INVENTARIO).upsert(
+            data_to_insert, on_conflict="usuario_email"
+        ).execute()
         return True
     except Exception as e:
-        st.error(f"Error al guardar en Google Sheets: {str(e)}")
+        st.error(f"Error al guardar en Supabase: {str(e)}")
         return False
 
 
 def cargar_inventario_guardado(usuario_email: str):
-    """
-    Carga el inventario guardado del usuario desde Google Sheets.
-
-    Args:
-        usuario_email: Email del usuario
-
-    Returns:
-        pd.DataFrame: DataFrame con el inventario o None si no existe
-    """
+    """Carga el inventario guardado del usuario desde Supabase."""
     try:
-        client = conectar_google_sheets()
-        if client is None:
+        supabase = get_supabase_client()
+        if not supabase:
             return None
 
-        spreadsheet = obtener_o_crear_spreadsheet(client)
-        worksheet_name = f"Inventario_{usuario_email.split('@')[0]}"
-
-        try:
-            worksheet = spreadsheet.worksheet(worksheet_name)
-            data = worksheet.get_all_values()
-
-            if len(data) <= 1:
-                return None
-
-            # Convertir a DataFrame
-            df = pd.DataFrame(data[1:], columns=data[0])
-
-            # Convertir columna de inventario_minimo a numérico
-            if "inventario_minimo" in df.columns:
-                df["inventario_minimo"] = pd.to_numeric(
-                    df["inventario_minimo"], errors="coerce"
-                )
-
-            return df
-        except gspread.WorksheetNotFound:
+        response = (
+            supabase.table(TABLE_INVENTARIO)
+            .select("data")
+            .eq("usuario_email", usuario_email)
+            .execute()
+        )
+        if not response.data:
             return None
+
+        records = response.data[0]["data"]
+        df = pd.DataFrame(records)
+
+        if "inventario_minimo" in df.columns:
+            df["inventario_minimo"] = pd.to_numeric(
+                df["inventario_minimo"], errors="coerce"
+            )
+
+        return df
     except Exception as e:
-        st.error(f"Error al cargar desde Google Sheets: {str(e)}")
+        st.error(f"Error al cargar desde Supabase: {str(e)}")
         return None
 
 
 def guardar_productos_siigo(productos_siigo: list):
-    """
-    Guarda los productos de Siigo en Google Sheets (caché compartido).
-
-    Args:
-        productos_siigo: Lista de productos de Siigo
-    """
+    """Guarda los productos de Siigo en Supabase (caché compartido)."""
     try:
-        client = conectar_google_sheets()
-        if client is None:
+        supabase = get_supabase_client()
+        if not supabase:
             return False
 
-        spreadsheet = obtener_o_crear_spreadsheet(client)
-        worksheet_name = "Cache_Siigo_Productos"
+        data_to_insert = {
+            "id": 1,
+            "data": productos_siigo,
+            "updated_at": datetime.now().isoformat(),
+        }
 
-        try:
-            worksheet = spreadsheet.worksheet(worksheet_name)
-            worksheet.clear()
-        except gspread.WorksheetNotFound:
-            worksheet = spreadsheet.add_worksheet(
-                title=worksheet_name, rows=5000, cols=10
-            )
-
-        # Convertir productos a DataFrame
-        df_siigo = procesar_productos_siigo(productos_siigo)
-
-        if len(df_siigo) == 0:
-            return False
-
-        # Convertir DataFrame a lista de listas
-        data = [df_siigo.columns.tolist()] + df_siigo.values.tolist()
-
-        # Guardar en Google Sheets
-        worksheet.update("A1", data)
-
-        # Guardar metadatos (fecha de actualización y total)
-        metadata = [
-            ["ultima_actualizacion", datetime.now().strftime("%Y-%m-%d %H:%M:%S")],
-            ["total_productos", len(productos_siigo)],
-        ]
-        worksheet.update("Z1", metadata)
-
+        supabase.table(TABLE_SIIGO_CACHE).upsert(
+            data_to_insert, on_conflict="id"
+        ).execute()
         return True
     except Exception as e:
         st.warning(f"No se pudieron guardar productos de Siigo: {str(e)}")
@@ -429,64 +240,34 @@ def guardar_productos_siigo(productos_siigo: list):
 
 
 def cargar_productos_siigo_guardados():
-    """
-    Carga los productos de Siigo guardados desde Google Sheets.
-
-    Returns:
-        tuple: (DataFrame procesado, lista de productos raw, timestamp) o None
-    """
+    """Carga los productos de Siigo guardados desde Supabase."""
     try:
-        client = conectar_google_sheets()
-        if client is None:
+        supabase = get_supabase_client()
+        if not supabase:
             return None
 
-        spreadsheet = obtener_o_crear_spreadsheet(client)
-        worksheet_name = "Cache_Siigo_Productos"
-
-        try:
-            worksheet = spreadsheet.worksheet(worksheet_name)
-
-            # Obtener metadatos
-            metadata = worksheet.get("Z1:Z2")
-            if not metadata or len(metadata) < 2:
-                return None
-
-            ultima_actualizacion_str = metadata[0][0] if len(metadata[0]) > 0 else None
-
-            if not ultima_actualizacion_str:
-                return None
-
-            # Verificar si los datos tienen menos de 24 horas
-            ultima_actualizacion = datetime.strptime(
-                ultima_actualizacion_str, "%Y-%m-%d %H:%M:%S"
-            )
-            horas_transcurridas = (
-                datetime.now() - ultima_actualizacion
-            ).total_seconds() / 3600
-
-            if horas_transcurridas > 24:
-                return None  # Datos muy antiguos
-
-            # Cargar datos
-            data = worksheet.get_all_values()
-
-            if len(data) <= 1:
-                return None
-
-            # Convertir a DataFrame
-            df_siigo = pd.DataFrame(data[1:], columns=data[0])
-
-            # Convertir columna stock_actual a numérico
-            if "stock_actual" in df_siigo.columns:
-                df_siigo["stock_actual"] = pd.to_numeric(
-                    df_siigo["stock_actual"], errors="coerce"
-                ).fillna(0)
-
-            return (df_siigo, None, ultima_actualizacion)
-
-        except gspread.WorksheetNotFound:
+        response = supabase.table(TABLE_SIIGO_CACHE).select("*").eq("id", 1).execute()
+        if not response.data:
             return None
-    except Exception as e:
+
+        row = response.data[0]
+
+        updated_at_str = row["updated_at"]
+        if updated_at_str.endswith("Z"):
+            updated_at_str = updated_at_str[:-1]
+
+        updated_at = datetime.fromisoformat(updated_at_str)
+        if updated_at.tzinfo is not None:
+            updated_at = updated_at.replace(tzinfo=None)
+
+        horas_transcurridas = (datetime.now() - updated_at).total_seconds() / 3600
+        if horas_transcurridas > 24:
+            return None
+
+        productos_siigo = row["data"]
+        df_siigo = procesar_productos_siigo(productos_siigo)
+        return (df_siigo, None, updated_at)
+    except Exception:
         return None
 
 
@@ -495,67 +276,34 @@ def cargar_productos_siigo_guardados():
 # ============================================================================
 
 
-def cargar_excel(archivo) -> pd.DataFrame:
+def cargar_inventario_minimo_supabase() -> pd.DataFrame:
     """
-    Carga y valida el archivo Excel de inventario mínimo.
-
-    Args:
-        archivo: Archivo subido por el usuario
-
-    Returns:
-        pd.DataFrame: DataFrame con los datos del Excel
+    Carga el inventario mínimo desde la tabla inventario_minimo en Supabase.
     """
     try:
-        df = pd.read_excel(archivo)
-
-        # Normalizar nombres de columnas
-        df.columns = df.columns.str.strip().str.lower()
-
-        # Mapear posibles variaciones de nombres de columnas
-        column_mapping = {
-            "referencia": "referencia",
-            "ref": "referencia",
-            "codigo": "referencia",
-            "código": "referencia",
-            "nombre": "nombre",
-            "producto": "nombre",
-            "descripcion": "nombre",
-            "descripción": "nombre",
-            "inventario minimo": "inventario_minimo",
-            "inventario mínimo": "inventario_minimo",
-            "inventario minimo por gramos": "inventario_minimo",
-            "inventario mínimo por gramos": "inventario_minimo",
-            "minimo": "inventario_minimo",
-            "mínimo": "inventario_minimo",
-            "min": "inventario_minimo",
-            "stock_minimo": "inventario_minimo",
-            "stock minimo": "inventario_minimo",
-        }
-
-        df = df.rename(columns=column_mapping)
-
-        # Validar columnas requeridas
-        columnas_requeridas = ["referencia", "nombre", "inventario_minimo"]
-        columnas_faltantes = [
-            col for col in columnas_requeridas if col not in df.columns
-        ]
-
-        if columnas_faltantes:
-            raise ValueError(
-                f"Columnas faltantes en el Excel: {', '.join(columnas_faltantes)}"
-            )
-
-        # Limpiar datos
+        supabase = get_supabase_client()
+        if not supabase:
+            return None
+        response = supabase.table("inventario_minimo").select("*").execute()
+        if not response.data:
+            return None
+        df = pd.DataFrame(response.data)
+        df = df.rename(
+            columns={
+                "codigo": "referencia",
+                "nombre": "nombre",
+                "inv_minimo": "inventario_minimo",
+            }
+        )
         df["referencia"] = df["referencia"].astype(str).str.strip()
         df["nombre"] = df["nombre"].astype(str).str.strip()
         df["inventario_minimo"] = pd.to_numeric(
             df["inventario_minimo"], errors="coerce"
         ).fillna(0)
-
         return df
-
     except Exception as e:
-        raise ValueError(f"Error al cargar el Excel: {str(e)}")
+        st.error(f"Error al cargar inventario mínimo desde Supabase: {str(e)}")
+        return None
 
 
 def procesar_productos_siigo(productos: list) -> pd.DataFrame:
@@ -762,7 +510,7 @@ def generar_html_impresion(df: pd.DataFrame, titulo: str = "Lista de Faltantes")
     <body>
         <h1>📦 {titulo}</h1>
         <p class="fecha">Generado el: {fecha_actual}</p>
-        
+
         <table>
             <thead>
                 <tr>
@@ -778,12 +526,12 @@ def generar_html_impresion(df: pd.DataFrame, titulo: str = "Lista de Faltantes")
                 {filas_html}
             </tbody>
         </table>
-        
+
         <div class="footer">
             <p>Colsabor - Sistema de Monitor de Inventario</p>
             <p>Total de productos listados: {len(df)}</p>
         </div>
-        
+
         <script>
             // Auto-abrir diálogo de impresión
             window.onload = function() {{
@@ -797,548 +545,749 @@ def generar_html_impresion(df: pd.DataFrame, titulo: str = "Lista de Faltantes")
     return html
 
 
-def generar_excel_descarga(df: pd.DataFrame) -> bytes:
-    """
-    Genera archivo Excel para descarga.
-
-    Args:
-        df: DataFrame con los datos
-
-    Returns:
-        bytes: Contenido del archivo Excel
-    """
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Faltantes")
-    output.seek(0)
-    return output.getvalue()
+def generar_csv_descarga(df: pd.DataFrame) -> bytes:
+    """Genera archivo CSV para descarga."""
+    return df.to_csv(index=False).encode("utf-8")
 
 
 # ============================================================================
 # INTERFAZ PRINCIPAL
 # ============================================================================
 
+_VARS_LIGHT = """
+  --bg-base: #f0f4fa;
+  --bg-surface: rgba(255,255,255,0.96);
+  --bg-surface-hover: rgba(255,255,255,1);
+  --bg-glass: rgba(255,255,255,0.80);
+  --border-subtle: rgba(148,163,184,0.25);
+  --border-strong: rgba(100,116,139,0.40);
+  --text-primary: #07111e;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-light: #dbeafe;
+  --accent-glow: rgba(37,99,235,0.20);
+  --cyan: #0891b2;
+  --red: #dc2626; --red-bg: #fef2f2; --red-border: rgba(220,38,38,0.22);
+  --amber: #d97706; --amber-bg: #fffbeb; --amber-border: rgba(217,119,6,0.22);
+  --green: #059669; --green-bg: #ecfdf5; --green-border: rgba(5,150,105,0.22);
+  --slate: #64748b; --slate-bg: #f8fafc; --slate-border: rgba(100,116,139,0.22);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.07);
+  --shadow-md: 0 4px 20px rgba(0,0,0,0.09);
+  --shadow-lg: 0 16px 48px rgba(0,0,0,0.12);
+  --shadow-glow: 0 0 0 1px rgba(37,99,235,0.07), 0 8px 32px rgba(37,99,235,0.12);
+  --pattern: rgba(37,99,235,0.028);
+  --nav-bg: rgba(240,244,250,0.96);
+  --nav-border: rgba(148,163,184,0.30);
+  --input-bg: rgba(255,255,255,0.96);
+  --toggle-bg: rgba(0,0,0,0.05);
+  --card-stripe-blue: linear-gradient(90deg,#2563eb,#0891b2);
+  --card-stripe-red: linear-gradient(90deg,#dc2626,#ef4444);
+  --card-stripe-amber: linear-gradient(90deg,#d97706,#f59e0b);
+  --card-stripe-green: linear-gradient(90deg,#059669,#34d399);
+"""
 
-# ============================================================================
-# INTERFAZ PRINCIPAL
-# ============================================================================
+_VARS_DARK = """
+  --bg-base: #030712;
+  --bg-surface: rgba(7,16,40,0.92);
+  --bg-surface-hover: rgba(10,22,52,0.96);
+  --bg-glass: rgba(5,11,28,0.82);
+  --border-subtle: rgba(37,99,235,0.16);
+  --border-strong: rgba(59,130,246,0.28);
+  --text-primary: #f0f6ff;
+  --text-secondary: #94a3b8;
+  --text-muted: #475569;
+  --accent: #3b82f6;
+  --accent-hover: #60a5fa;
+  --accent-light: rgba(59,130,246,0.14);
+  --accent-glow: rgba(59,130,246,0.30);
+  --cyan: #22d3ee;
+  --red: #f87171; --red-bg: rgba(248,113,113,0.09); --red-border: rgba(248,113,113,0.25);
+  --amber: #fbbf24; --amber-bg: rgba(251,191,36,0.09); --amber-border: rgba(251,191,36,0.25);
+  --green: #34d399; --green-bg: rgba(52,211,153,0.09); --green-border: rgba(52,211,153,0.25);
+  --slate: #64748b; --slate-bg: rgba(100,116,139,0.08); --slate-border: rgba(100,116,139,0.22);
+  --shadow-sm: 0 1px 4px rgba(0,0,0,0.40);
+  --shadow-md: 0 4px 24px rgba(0,0,0,0.52);
+  --shadow-lg: 0 16px 60px rgba(0,0,0,0.65);
+  --shadow-glow: 0 0 0 1px rgba(59,130,246,0.09), 0 8px 40px rgba(59,130,246,0.18);
+  --pattern: rgba(59,130,246,0.014);
+  --nav-bg: rgba(3,7,18,0.97);
+  --nav-border: rgba(37,99,235,0.20);
+  --input-bg: rgba(7,16,40,0.85);
+  --toggle-bg: rgba(255,255,255,0.06);
+  --card-stripe-blue: linear-gradient(90deg,#3b82f6,#22d3ee);
+  --card-stripe-red: linear-gradient(90deg,#ef4444,#f87171);
+  --card-stripe-amber: linear-gradient(90deg,#f59e0b,#fbbf24);
+  --card-stripe-green: linear-gradient(90deg,#10b981,#34d399);
+"""
+
+_MAIN_CSS = (
+    """
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {"""
+    + _VARS_LIGHT
+    + """}
+@media (prefers-color-scheme: dark) { :root {"""
+    + _VARS_DARK
+    + """} }
+
+/* ── Reset & Base ─────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box !important; }
+html, body, [class*="st-"], .stApp {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif !important;
+  -webkit-font-smoothing: antialiased !important; -moz-osx-font-smoothing: grayscale !important;
+}
+.stApp {
+  background: var(--bg-base) !important;
+  background-image: radial-gradient(circle at 1px 1px, var(--pattern) 1px, transparent 0) !important;
+  background-size: 24px 24px !important; min-height: 100vh !important;
+  transition: background 0.4s ease !important;
+}
+#MainMenu, footer, header { visibility: hidden !important; }
+[data-testid="stSidebar"] { display: none !important; }
+.block-container { padding: 0 2rem 6rem !important; max-width: 1440px !important; }
+
+/* ── Navbar ───────────────────────────────────────────────────────── */
+.cs-nav {
+  position: sticky; top: 0; z-index: 1000; overflow: hidden;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 0 24px; height: 58px;
+  background: var(--nav-bg);
+  border-bottom: 1px solid var(--nav-border);
+  backdrop-filter: blur(28px) saturate(200%); -webkit-backdrop-filter: blur(28px) saturate(200%);
+  margin: 0 -2rem 1.5rem;
+  animation: cs-navbar-in 0.55s cubic-bezier(0.16,1,0.3,1) both;
+}
+.cs-nav::after {
+  content: ''; position: absolute; bottom: 0; left: -100%; width: 80px; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  animation: cs-nav-scan 5s ease-in-out infinite;
+}
+.cs-nav-left { display: flex; align-items: center; gap: 11px; }
+.cs-nav-logo-ring {
+  width: 34px; height: 34px; flex-shrink: 0;
+  background: linear-gradient(145deg, #3062e8, #1540c4);
+  border-radius: 9px; display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 12px rgba(37,99,235,0.45), inset 0 1px 0 rgba(255,255,255,0.15);
+}
+.cs-nav-brand { font-size: 13px; font-weight: 800; letter-spacing: -0.04em; color: var(--text-primary); line-height: 1; }
+.cs-nav-tagline { font-size: 9px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-muted); margin-top: 2px; }
+.cs-nav-right { display: flex; align-items: center; gap: 8px; }
+.cs-nav-user { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; color: var(--text-secondary); padding: 4px 10px; background: var(--toggle-bg); border-radius: 20px; }
+.cs-nav-ts { font-size: 10px; font-family: 'JetBrains Mono', monospace; color: var(--text-muted); letter-spacing: 0.03em; }
+.cs-live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); display: inline-block; box-shadow: 0 0 8px var(--green); animation: cs-live 2s ease-in-out infinite; }
+.cs-nav-divider { color: var(--border-strong); font-size: 16px; font-weight: 200; }
+
+/* ── Metric Cards ─────────────────────────────────────────────────── */
+.cs-bento {
+  display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; margin: 0 0 20px;
+  animation: cs-rise 0.6s cubic-bezier(0.16,1,0.3,1) 0.1s both;
+}
+.cs-card {
+  position: relative; overflow: hidden;
+  background: var(--bg-surface);
+  backdrop-filter: blur(24px) saturate(160%); -webkit-backdrop-filter: blur(24px) saturate(160%);
+  border: 1px solid var(--border-subtle); border-radius: 20px; padding: 20px 22px 18px;
+  box-shadow: var(--shadow-md);
+  transition: transform 0.3s cubic-bezier(0.16,1,0.3,1), box-shadow 0.3s ease, border-color 0.25s;
+}
+.cs-card:hover { transform: translateY(-5px); box-shadow: var(--shadow-lg); border-color: var(--border-strong); }
+.cs-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+.cs-card-blue::before { background: var(--card-stripe-blue); }
+.cs-card-red::before { background: var(--card-stripe-red); }
+.cs-card-amber::before { background: var(--card-stripe-amber); }
+.cs-card-green::before { background: var(--card-stripe-green); }
+.cs-card-icon { font-size: 18px; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; border-radius: 10px; margin-bottom: 14px; }
+.cs-card-blue .cs-card-icon { background: var(--accent-light); }
+.cs-card-red .cs-card-icon { background: var(--red-bg); }
+.cs-card-amber .cs-card-icon { background: var(--amber-bg); }
+.cs-card-green .cs-card-icon { background: var(--green-bg); }
+.cs-card-value { font-size: 38px; font-weight: 700; letter-spacing: -0.05em; font-family: 'JetBrains Mono', monospace; line-height: 1; }
+.cs-card-blue .cs-card-value { color: var(--accent); text-shadow: 0 0 24px var(--accent-glow); }
+.cs-card-red .cs-card-value { color: var(--red); text-shadow: 0 0 18px rgba(220,38,38,0.22); }
+.cs-card-amber .cs-card-value { color: var(--amber); text-shadow: 0 0 18px rgba(217,119,6,0.22); }
+.cs-card-green .cs-card-value { color: var(--green); text-shadow: 0 0 18px rgba(5,150,105,0.22); }
+.cs-card-label { font-size: 10px; font-weight: 700; letter-spacing: 0.10em; text-transform: uppercase; color: var(--text-muted); margin-top: 8px; }
+.cs-card-sub { font-size: 10px; color: var(--text-muted); margin-top: 3px; opacity: 0.75; }
+
+/* ── Chart Panels ─────────────────────────────────────────────────── */
+.cs-charts-row { display: grid; grid-template-columns: 1fr 1.6fr; gap: 14px; margin-bottom: 20px; animation: cs-rise 0.6s cubic-bezier(0.16,1,0.3,1) 0.18s both; }
+.cs-chart-card { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 20px; overflow: hidden; box-shadow: var(--shadow-sm); padding: 8px 4px 4px; }
+.cs-chart-title { font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); padding: 8px 20px 0; }
+.cs-ok-panel { display: flex; align-items: center; justify-content: center; min-height: 200px; border-radius: 20px; background: var(--green-bg); border: 1px solid var(--green-border); font-size: 14px; font-weight: 700; color: var(--green); text-align: center; flex-direction: column; gap: 8px; }
+.cs-ok-panel span { font-size: 32px; }
+
+/* ── Health Bar ──────────────────────────────────────────────────── */
+.cs-health-bar-wrap { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 16px; padding: 14px 20px; margin-bottom: 20px; display: flex; align-items: center; gap: 16px; animation: cs-rise 0.6s cubic-bezier(0.16,1,0.3,1) 0.25s both; }
+.cs-health-label { font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); white-space: nowrap; }
+.cs-health-track { flex: 1; height: 6px; background: var(--border-subtle); border-radius: 3px; overflow: hidden; }
+.cs-health-fill { height: 100%; border-radius: 3px; transition: width 0.8s cubic-bezier(0.16,1,0.3,1); }
+.cs-health-pct { font-size: 13px; font-weight: 700; font-family: 'JetBrains Mono', monospace; white-space: nowrap; }
+
+/* ── Section Headers ─────────────────────────────────────────────── */
+.cs-section { font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-muted); display: flex; align-items: center; gap: 8px; margin: 22px 0 12px; }
+.cs-section::after { content: ''; flex: 1; height: 1px; background: var(--border-subtle); }
+
+/* ── Filter Panel ────────────────────────────────────────────────── */
+.cs-panel { background: var(--bg-surface); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid var(--border-subtle); border-radius: 20px; padding: 20px 24px; box-shadow: var(--shadow-sm); margin-bottom: 20px; animation: cs-rise 0.5s cubic-bezier(0.16,1,0.3,1) 0.2s both; }
+
+/* ── Login ───────────────────────────────────────────────────────── */
+.cs-login-wrap { min-height: calc(100vh - 58px); display: flex; align-items: center; justify-content: center; padding: 40px 20px; }
+.cs-login-card {
+  width: 100%; max-width: 395px; position: relative; overflow: hidden;
+  background: var(--bg-surface); backdrop-filter: blur(40px) saturate(200%); -webkit-backdrop-filter: blur(40px) saturate(200%);
+  border: 1px solid var(--border-subtle); border-radius: 24px; padding: 44px 36px 36px;
+  box-shadow: var(--shadow-lg), var(--shadow-glow);
+  animation: cs-scale-in 0.55s cubic-bezier(0.16,1,0.3,1) both;
+}
+.cs-login-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--card-stripe-blue); }
+.cs-login-logo-ring { width: 58px; height: 58px; background: linear-gradient(145deg,#3062e8,#1540c4); border-radius: 16px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 24px rgba(37,99,235,0.42), inset 0 1px 0 rgba(255,255,255,0.15); margin: 0 auto 16px; }
+.cs-login-company { font-size: 20px; font-weight: 800; letter-spacing: -0.04em; color: var(--text-primary); text-align: center; }
+.cs-login-subtitle { font-size: 11px; color: var(--text-muted); font-weight: 500; text-align: center; margin-bottom: 30px; letter-spacing: 0.06em; text-transform: uppercase; }
+.cs-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); background: var(--accent-light); border: 1px solid rgba(37,99,235,0.18); padding: 4px 10px; border-radius: 20px; }
+
+/* ── Buttons ─────────────────────────────────────────────────────── */
+.stButton > button {
+  background: var(--accent) !important; color: #fff !important; border: none !important;
+  border-radius: 10px !important; font-family: 'Inter', sans-serif !important;
+  font-weight: 600 !important; font-size: 13px !important; letter-spacing: -0.01em !important;
+  padding: 10px 18px !important; box-shadow: 0 2px 10px var(--accent-glow) !important;
+  transition: all 0.2s cubic-bezier(0.16,1,0.3,1) !important; width: 100% !important;
+}
+.stButton > button:hover { background: var(--accent-hover) !important; transform: translateY(-1px) !important; box-shadow: 0 6px 20px var(--accent-glow) !important; }
+.stButton > button:active { transform: translateY(0) !important; }
+.cs-btn-ghost .stButton > button { background: var(--toggle-bg) !important; color: var(--text-secondary) !important; border: 1px solid var(--border-subtle) !important; box-shadow: none !important; }
+.cs-btn-ghost .stButton > button:hover { background: var(--border-subtle) !important; color: var(--text-primary) !important; transform: none !important; box-shadow: none !important; }
+.cs-btn-danger .stButton > button { background: var(--red-bg) !important; color: var(--red) !important; border: 1px solid var(--red-border) !important; box-shadow: none !important; }
+
+/* ── Inputs ──────────────────────────────────────────────────────── */
+.stTextInput > div > div > input, .stSelectbox > div > div, .stMultiselect > div > div { background: var(--input-bg) !important; border: 1px solid var(--border-strong) !important; border-radius: 10px !important; color: var(--text-primary) !important; font-family: 'Inter', sans-serif !important; font-size: 13px !important; transition: border-color 0.2s, box-shadow 0.2s !important; }
+.stTextInput > div > div > input:focus { border-color: var(--accent) !important; box-shadow: 0 0 0 3px var(--accent-glow) !important; }
+label[data-baseweb="form-control-label"] { color: var(--text-secondary) !important; font-size: 12px !important; font-weight: 600 !important; font-family: 'Inter', sans-serif !important; }
+[data-baseweb="tag"] { background: var(--accent-light) !important; color: var(--accent) !important; border: 1px solid rgba(37,99,235,0.15) !important; border-radius: 6px !important; }
+
+/* ── Data Table ──────────────────────────────────────────────────── */
+.stDataFrame { border-radius: 16px !important; overflow: hidden !important; }
+.stDataFrame [data-testid="stDataFrameResizable"] { border: 1px solid var(--border-subtle) !important; border-radius: 16px !important; }
+
+/* ── Plotly ──────────────────────────────────────────────────────── */
+.stPlotlyChart { border-radius: 16px !important; overflow: hidden !important; background: transparent !important; }
+
+/* ── Expander ────────────────────────────────────────────────────── */
+.streamlit-expanderHeader { background: var(--bg-surface) !important; border: 1px solid var(--border-subtle) !important; border-radius: 12px !important; color: var(--text-secondary) !important; font-family: 'Inter', sans-serif !important; font-size: 12px !important; font-weight: 600 !important; }
+.streamlit-expanderContent { background: var(--bg-glass) !important; border: 1px solid var(--border-subtle) !important; border-top: none !important; border-radius: 0 0 12px 12px !important; }
+
+/* ── Alerts ──────────────────────────────────────────────────────── */
+.stSuccess, .stInfo, .stWarning, .stError { border-radius: 12px !important; font-size: 13px !important; font-family: 'Inter', sans-serif !important; }
+.stCaption { color: var(--text-muted) !important; font-size: 11px !important; font-family: 'Inter', sans-serif !important; }
+
+/* ── Animations ──────────────────────────────────────────────────── */
+@keyframes cs-rise { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+@keyframes cs-navbar-in { from { opacity:0; transform:translateY(-16px); } to { opacity:1; transform:translateY(0); } }
+@keyframes cs-scale-in { from { opacity:0; transform:scale(0.95) translateY(10px); } to { opacity:1; transform:scale(1) translateY(0); } }
+@keyframes cs-live { 0%,100% { box-shadow:0 0 6px var(--green); opacity:1; } 50% { box-shadow:0 0 14px var(--green); opacity:0.5; } }
+@keyframes cs-nav-scan { 0% { left:-100%; } 100% { left:250%; } }
+
+@media print { .cs-nav, .stButton, .stDownloadButton { display: none !important; } }
+</style>
+"""
+)
+
+_LOGO_SM = (
+    '<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">'
+    '<rect width="20" height="20" rx="6" fill="rgba(255,255,255,0.10)"/>'
+    '<path d="M7 7.5C7 5.8 8.2 4.8 10 4.8C11.8 4.8 13 5.8 13 7.2C13 8.8 11.2 9.7 10 10.2'
+    'C8.8 10.7 7 11.5 7 13C7 14.4 8.2 15.2 10 15.2C11.8 15.2 13 14.2 13 13.4"'
+    ' stroke="white" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>'
+)
+
+_LOGO_LG = (
+    '<svg width="30" height="30" viewBox="0 0 30 30" fill="none" xmlns="http://www.w3.org/2000/svg">'
+    '<rect width="30" height="30" rx="9" fill="rgba(255,255,255,0.08)"/>'
+    '<circle cx="15" cy="15" r="10" stroke="rgba(255,255,255,0.14)" stroke-width="1"/>'
+    '<path d="M10.5 11.5C10.5 9.5 12 8.2 15 8.2C18 8.2 19.5 9.5 19.5 11.4C19.5 13.6 17.2 14.7 15 15.7'
+    'C12.8 16.7 10.5 17.8 10.5 20C10.5 21.9 12 23.3 15 23.3C18 23.3 19.5 21.8 19.5 20.6"'
+    ' stroke="white" stroke-width="2" stroke-linecap="round" fill="none"/></svg>'
+)
+
+
+def _inject_css():
+    theme = st.session_state.get("theme_override", "auto")
+    st.markdown(_MAIN_CSS, unsafe_allow_html=True)
+    if theme == "dark":
+        st.markdown(f"<style>:root {{ {_VARS_DARK} }}</style>", unsafe_allow_html=True)
+    elif theme == "light":
+        st.markdown(
+            f"<style>:root {{ {_VARS_LIGHT} }} @media (prefers-color-scheme: dark) {{ :root {{ {_VARS_LIGHT} }} }}</style>",
+            unsafe_allow_html=True,
+        )
+
+
+# ── Plotly chart helpers ──────────────────────────────────────────────────────
+
+def _build_donut_chart(criticos: int, bajos: int, ok: int, no_encontrados: int, total: int):
+    """Donut chart showing inventory status distribution."""
+    labels = ["Crítico", "Bajo", "OK", "No encontrado"]
+    values = [criticos, bajos, ok, no_encontrados]
+    colors = ["#ef4444", "#f59e0b", "#10b981", "#64748b"]
+    pct_ok = round(100 * ok / total) if total else 0
+
+    fig = go.Figure(go.Pie(
+        labels=labels,
+        values=values,
+        hole=0.70,
+        marker=dict(colors=colors, line=dict(width=0)),
+        textinfo="none",
+        hovertemplate="%{label}: %{value}<br>%{percent}<extra></extra>",
+    ))
+    fig.add_annotation(
+        text=(
+            f"<b style='font-size:22px'>{pct_ok}%</b>"
+            "<br><span style='font-size:9px;color:#64748b;letter-spacing:2px'>SALUDABLE</span>"
+        ),
+        x=0.5, y=0.5, showarrow=False, align="center",
+        font=dict(size=14, family="JetBrains Mono, monospace", color="#94a3b8"),
+    )
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        margin=dict(t=10, b=10, l=10, r=10), height=240,
+        showlegend=True,
+        legend=dict(
+            orientation="h", yanchor="bottom", y=-0.28,
+            xanchor="center", x=0.5,
+            font=dict(size=10, color="#64748b", family="Inter, sans-serif"),
+        ),
+        font=dict(family="Inter, sans-serif"),
+    )
+    return fig
+
+
+def _build_deficit_chart(df_deficit: pd.DataFrame):
+    """Horizontal bar chart of top items with the largest stock deficit."""
+    labels = (
+        df_deficit["Referencia"].str[:10]
+        + " · "
+        + df_deficit["Nombre"].str[:16]
+    ).tolist()
+    values = df_deficit["Diferencia"].tolist()
+    bar_colors = [
+        "#ef4444" if "Crítico" in str(e) else "#f59e0b"
+        for e in df_deficit["Estado"].tolist()
+    ]
+    fig = go.Figure(go.Bar(
+        x=values,
+        y=labels,
+        orientation="h",
+        marker=dict(color=bar_colors, opacity=0.88, line=dict(width=0)),
+        text=[f"{v:,.0f}g" for v in values],
+        textposition="outside",
+        textfont=dict(size=10, color="#94a3b8", family="JetBrains Mono, monospace"),
+        hovertemplate="%{y}<br><b>Déficit: %{x:,.0f} g</b><extra></extra>",
+    ))
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        margin=dict(t=10, b=24, l=8, r=88), height=240,
+        xaxis=dict(
+            showgrid=True, gridcolor="rgba(100,116,139,0.10)", gridwidth=1,
+            color="#475569", zeroline=True, zerolinecolor="rgba(100,116,139,0.20)",
+            tickfont=dict(size=9, family="JetBrains Mono, monospace"),
+        ),
+        yaxis=dict(
+            color="#94a3b8", showgrid=False, automargin=True,
+            tickfont=dict(size=10, family="Inter, sans-serif"),
+        ),
+        font=dict(family="Inter, sans-serif", color="#94a3b8"),
+        bargap=0.32,
+    )
+    return fig
 
 
 def main():
     """Función principal de la aplicación."""
+    _inject_css()
 
-    # Header moderno
+    # ── LOGIN ────────────────────────────────────────────────────────────────
+    if "token_siigo" not in st.session_state:
+        st.markdown(
+            f"""
+            <div class="cs-login-wrap">
+              <div class="cs-login-card">
+                <div class="cs-login-logo-ring">{_LOGO_LG}</div>
+                <div class="cs-login-company">COLSABOR</div>
+                <div class="cs-login-subtitle">S.A.S &middot; Sistema de Inventario</div>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        _, col, _ = st.columns([1, 1.1, 1])
+        with col:
+            st.markdown(
+                "<style>.cs-login-wrap{margin-bottom:-310px}</style>",
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                '<div style="text-align:center;margin-bottom:20px"><span class="cs-badge">🔒 Acceso Restringido</span></div>',
+                unsafe_allow_html=True,
+            )
+            usuario_email = st.text_input(
+                "Correo corporativo",
+                placeholder="nombre@colsabor.com.co",
+                key="email_input",
+            )
+            usuario_password = st.text_input(
+                "Contraseña", type="password", key="password_input"
+            )
+            st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+            if st.button("Iniciar Sesión →", use_container_width=True, type="primary"):
+                email_clean = usuario_email.strip().lower()
+                if not email_clean or not usuario_password:
+                    st.warning("Completa tu correo y contraseña.")
+                elif email_clean not in ALLOWED_EMAILS:
+                    st.error("Acceso denegado. Este correo no está autorizado.")
+                else:
+                    supabase = get_supabase_client()
+                    if supabase is None:
+                        st.error("Sin conexión a Supabase.")
+                    else:
+                        with st.spinner("Verificando credenciales…"):
+                            try:
+                                resp = supabase.auth.sign_in_with_password(
+                                    {"email": email_clean, "password": usuario_password}
+                                )
+                                if resp.session:
+                                    resultado_siigo = autenticar_siigo(
+                                        "dirtec@colsabor.com.co", SIIGO_ACCESS_KEY
+                                    )
+                                    if resultado_siigo["success"]:
+                                        st.session_state["token_siigo"] = (
+                                            resultado_siigo["token"]
+                                        )
+                                        st.session_state["usuario_email"] = (
+                                            resp.user.email
+                                        )
+                                        st.rerun()
+                                    else:
+                                        st.error("Error al conectar con Siigo.")
+                                else:
+                                    st.error("Credenciales incorrectas.")
+                            except Exception as e:
+                                msg = str(e)
+                                if "Invalid login credentials" in msg:
+                                    st.error("Correo o contraseña incorrectos.")
+                                elif "Email not confirmed" in msg:
+                                    st.warning("Confirma tu correo antes de entrar.")
+                                else:
+                                    st.error(f"Error: {msg}")
+        st.stop()
+
+    # ── NAVBAR ───────────────────────────────────────────────────────────────
+    usuario_email = st.session_state.get("usuario_email", "")
+    ultima_act = st.session_state.get("ultima_actualizacion", datetime.now())
+    theme = st.session_state.get("theme_override", "auto")
+    theme_icon = "☀️" if theme == "dark" else "🌙"
+
     st.markdown(
-        """
-        <div class='header-title'>
-            <h1 style='margin:0; font-size: 2.5em;'>📦 Monitor de Inventario</h1>
-            <p style='margin:5px 0 0 0; font-size: 1.1em; opacity: 0.9;'>Colsabor - Control de Stock Inteligente</p>
+        f"""
+        <div class="cs-nav">
+          <div class="cs-nav-left">
+            <div class="cs-nav-logo-ring">{_LOGO_SM}</div>
+            <div>
+              <div class="cs-nav-brand">COLSABOR</div>
+              <div class="cs-nav-tagline">Monitor de Inventario</div>
+            </div>
+          </div>
+          <div class="cs-nav-right">
+            <span class="cs-live-dot"></span>
+            <span class="cs-nav-ts" style="color:var(--green);font-weight:700;font-size:10px;letter-spacing:.1em">LIVE</span>
+            <span class="cs-nav-ts" style="color:var(--border-subtle)">|</span>
+            <span class="cs-nav-ts">{ultima_act.strftime('%d %b %Y %H:%M')}</span>
+            <span class="cs-nav-user">{usuario_email.split('@')[0].upper()}</span>
+          </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    # Autenticación (solo si no está autenticado)
-    if "token_siigo" not in st.session_state:
-        st.markdown("<br>", unsafe_allow_html=True)
+    _, nc1, nc2, nc3 = st.columns([6, 1, 1, 1])
+    with nc1:
+        st.markdown('<div class="cs-btn-ghost">', unsafe_allow_html=True)
+        if st.button(theme_icon, help="Cambiar tema", use_container_width=True):
+            st.session_state["theme_override"] = "light" if theme == "dark" else "dark"
+            st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+    with nc2:
+        st.markdown('<div class="cs-btn-ghost">', unsafe_allow_html=True)
+        if st.button("⟳", help="Actualizar datos de Siigo", use_container_width=True):
+            st.session_state["forzar_actualizacion"] = True
+            st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+    with nc3:
+        st.markdown('<div class="cs-btn-danger">', unsafe_allow_html=True)
+        if st.button("↩", help="Cerrar sesión", use_container_width=True):
+            for k in list(st.session_state.keys()):
+                del st.session_state[k]
+            st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
 
-        col1, col2, col3 = st.columns([1, 2, 1])
+    # ── CARGA INVENTARIO MÍNIMO ───────────────────────────────────────────────
+    if (
+        "df_excel_cache" not in st.session_state
+        or "forzar_actualizacion" in st.session_state
+    ):
+        with st.spinner("Cargando inventario mínimo…"):
+            df_excel = cargar_inventario_minimo_supabase()
+        if df_excel is not None:
+            st.session_state["df_excel_cache"] = df_excel
+        else:
+            st.error("No se pudo cargar el inventario mínimo. Verifica Supabase.")
+            st.stop()
+    else:
+        df_excel = st.session_state["df_excel_cache"]
 
-        with col2:
+    # ── CARGA SIIGO ───────────────────────────────────────────────────────────
+    if (
+        "df_siigo_cache" not in st.session_state
+        or "forzar_actualizacion" in st.session_state
+    ):
+        datos_guardados = None
+        if "forzar_actualizacion" not in st.session_state:
+            with st.spinner("Buscando caché de Siigo…"):
+                datos_guardados = cargar_productos_siigo_guardados()
+
+        if datos_guardados is not None:
+            df_siigo, _, ultima_actualizacion = datos_guardados
+            productos_siigo = []
+            total_obtenidos = len(df_siigo)
+            st.session_state.update(
+                {
+                    "df_siigo_cache": df_siigo,
+                    "productos_siigo_cache": productos_siigo,
+                    "total_obtenidos": total_obtenidos,
+                    "ultima_actualizacion": ultima_actualizacion,
+                }
+            )
+        else:
+            with st.spinner("Descargando productos de Siigo…"):
+                resultado = obtener_todos_los_productos_siigo(
+                    st.session_state["token_siigo"]
+                )
+            if not resultado["success"]:
+                st.error(resultado["error"])
+                st.stop()
+            productos_siigo = resultado["data"]
+            total_obtenidos = resultado.get("total", len(productos_siigo))
+            with st.spinner("Procesando productos…"):
+                df_siigo = procesar_productos_siigo(productos_siigo)
+            st.session_state.update(
+                {
+                    "df_siigo_cache": df_siigo,
+                    "productos_siigo_cache": productos_siigo,
+                    "total_obtenidos": total_obtenidos,
+                    "ultima_actualizacion": datetime.now(),
+                }
+            )
+            with st.spinner("Guardando caché en Supabase…"):
+                guardar_productos_siigo(productos_siigo)
+
+        if "forzar_actualizacion" in st.session_state:
+            del st.session_state["forzar_actualizacion"]
+    else:
+        df_siigo = st.session_state["df_siigo_cache"]
+        productos_siigo = st.session_state.get("productos_siigo_cache", [])
+        total_obtenidos = st.session_state.get("total_obtenidos", len(df_siigo))
+
+    if "ultima_actualizacion" not in st.session_state:
+        st.session_state["ultima_actualizacion"] = datetime.now()
+
+    # ── CRUCE DE INVENTARIOS ──────────────────────────────────────────────────
+    with st.spinner("Cruzando inventarios…"):
+        df_resultado = cruzar_inventarios(df_excel, df_siigo)
+
+    total = len(df_resultado)
+    criticos = len(df_resultado[df_resultado["Estado"].str.contains("Crítico")])
+    bajos = len(df_resultado[df_resultado["Estado"].str.contains("Bajo")])
+    ok = len(df_resultado[df_resultado["Estado"].str.contains("OK")])
+    no_encontrados = len(
+        df_resultado[df_resultado["Estado"].str.contains("No encontrado")]
+    )
+
+    # ── BENTO MÉTRICO ────────────────────────────────────────────────────────
+    st.markdown(
+        f"""
+        <div class="cs-bento">
+          <div class="cs-card cs-card-blue">
+            <div class="cs-card-icon">📦</div>
+            <div class="cs-card-value">{total}</div>
+            <div class="cs-card-label">Total Referencias</div>
+            <div class="cs-card-sub">{total_obtenidos} en Siigo</div>
+          </div>
+          <div class="cs-card cs-card-red">
+            <div class="cs-card-icon">🔴</div>
+            <div class="cs-card-value">{criticos}</div>
+            <div class="cs-card-label">Críticos</div>
+            <div class="cs-card-sub">Por debajo del mínimo</div>
+          </div>
+          <div class="cs-card cs-card-amber">
+            <div class="cs-card-icon">🟡</div>
+            <div class="cs-card-value">{bajos}</div>
+            <div class="cs-card-label">Stock Bajo</div>
+            <div class="cs-card-sub">Margen ≤ 20% del mínimo</div>
+          </div>
+          <div class="cs-card cs-card-green">
+            <div class="cs-card-icon">🟢</div>
+            <div class="cs-card-value">{ok}</div>
+            <div class="cs-card-label">En Orden</div>
+            <div class="cs-card-sub">Stock suficiente</div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # ── ANALYTICS ─────────────────────────────────────────────────────────
+    st.markdown('<div class="cs-section">📊 Análisis Visual</div>', unsafe_allow_html=True)
+    ach1, ach2 = st.columns([1, 1.6])
+    with ach1:
+        st.plotly_chart(
+            _build_donut_chart(criticos, bajos, ok, no_encontrados, total),
+            use_container_width=True,
+            config={"displayModeBar": False},
+        )
+    with ach2:
+        df_deficit = df_resultado[
+            df_resultado["Diferencia"] < 0
+        ].nsmallest(8, "Diferencia")
+        if len(df_deficit) > 0:
+            st.plotly_chart(
+                _build_deficit_chart(df_deficit),
+                use_container_width=True,
+                config={"displayModeBar": False},
+            )
+        else:
             st.markdown(
-                """
-                <div class='login-box'>
-                    <h3 style='margin-top:0; color: #1976D2;'>🔐 Iniciar Sesión</h3>
-                    <p style='color: #666; margin-bottom: 20px;'>Ingresa tu email de Colsabor</p>
-                </div>
-                """,
+                '<div class="cs-ok-panel"><span style="font-size:28px">🎯</span>'
+                '<div><b>Inventario Saludable</b><br>'
+                '<span style="font-size:12px;opacity:.7">Todos los productos en niveles óptimos</span></div></div>',
                 unsafe_allow_html=True,
             )
 
-            usuario_email = st.text_input(
-                "📧 Tu Email",
-                placeholder="gerencia@colsabor.com.co",
-                key="email_input",
-                help="Tu correo para identificarte en el sistema",
-            )
-
-            st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
-
-            col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
-            with col_btn2:
-                if st.button(
-                    "🚀 Conectar", use_container_width=True, type="primary"
-                ):
-                    if usuario_email:
-                        with st.spinner("🔄 Conectando..."):
-                            # Usar siempre el usuario dirtec para obtener el token
-                            # El email ingresado solo sirve para identificar al usuario en Google Sheets
-                            resultado = autenticar_siigo(
-                                "dirtec@colsabor.com.co", SIIGO_ACCESS_KEY
-                            )
-                            if resultado["success"]:
-                                st.session_state["token_siigo"] = resultado["token"]
-                                st.session_state["usuario_email"] = usuario_email  # Guardar el email real del usuario
-                                st.success(f"✅ Bienvenido/a {usuario_email.split('@')[0].title()}")
-                                st.balloons()
-                                st.rerun()
-                            else:
-                                st.error("❌ Error de conexión con Siigo. Intenta de nuevo.")
-                                with st.expander("Ver detalles del error"):
-                                    st.code(resultado.get("error", "Error desconocido"))
-                    else:
-                        st.warning("⚠️ Por favor ingresa tu usuario")
-
-            st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
-
-            st.info("💡 **Cualquier email de Colsabor funciona. Tus datos se guardan por separado.**")
-
-        st.stop()
-
-    # Usuario autenticado - mostrar barra superior con actualización automática
-    col1, col2, col3 = st.columns([3, 1, 1])
-    with col1:
-        st.markdown(
-            f"👤 **Usuario:** {st.session_state.get('usuario_email', 'Usuario')}"
+    if no_encontrados > 0:
+        st.warning(
+            f"⚠️ {no_encontrados} referencia(s) del inventario mínimo no encontradas en Siigo."
         )
-    with col2:
-        # Botón de actualizar manualmente
-        if st.button(
-            "🔄 Actualizar", use_container_width=True, help="Actualizar datos de Siigo"
-        ):
-            if (
-                "ultimo_excel" in st.session_state
-                and st.session_state["ultimo_excel"] is not None
-            ):
-                st.session_state["forzar_actualizacion"] = True
-                st.rerun()
-    with col3:
-        if st.button("🚪 Cerrar Sesión", use_container_width=True):
-            # Limpiar toda la sesión
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
-            st.rerun()
 
-    st.markdown("---")
+    # ── FILTROS ───────────────────────────────────────────────────────────────
+    st.markdown('<div class="cs-section">🔍 Filtros</div>', unsafe_allow_html=True)
+    st.markdown('<div class="cs-panel">', unsafe_allow_html=True)
+    fc1, fc2 = st.columns([1, 1])
+    with fc1:
+        filtro_estado = st.multiselect(
+            "Estado del producto",
+            options=["🔴 Crítico", "🟡 Bajo", "🟢 OK", "⚠️ No encontrado en Siigo"],
+            default=["🔴 Crítico", "🟡 Bajo"],
+        )
+    with fc2:
+        busqueda = st.text_input(
+            "Buscar por referencia o nombre", placeholder="Ej: R003 o AREQUIPE…"
+        )
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    # Área de carga de archivo
-    st.markdown("### 📤 Cargar Inventario Mínimo")
-
-    # Intentar cargar inventario guardado del usuario
-    usuario_email = st.session_state.get("usuario_email", "")
-    inventario_guardado = None
-
-    if usuario_email:
-        with st.spinner("🔍 Buscando inventario guardado..."):
-            inventario_guardado = cargar_inventario_guardado(usuario_email)
-
-    col1, col2 = st.columns([3, 1])
-
-    with col1:
-        # Mostrar si hay inventario guardado
-        if inventario_guardado is not None:
-            st.success(
-                f"✅ Inventario guardado encontrado: **{len(inventario_guardado)} productos**"
+    # Aplicar filtros
+    df_filtrado = df_resultado.copy()
+    if filtro_estado:
+        mascara = df_filtrado["Estado"].apply(
+            lambda e: any(
+                ("Crítico" in f and "Crítico" in e)
+                or ("Bajo" in f and "Bajo" in e and "Crítico" not in e)
+                or ("OK" in f and "OK" in e)
+                or ("No encontrado" in f and "No encontrado" in e)
+                for f in filtro_estado
             )
-            usar_guardado = st.checkbox(
-                "📁 Usar inventario guardado",
-                value=True,
-                help="Desmarca para subir un nuevo archivo",
-            )
+        )
+        df_filtrado = df_filtrado[mascara]
+    if busqueda:
+        q = busqueda.lower()
+        df_filtrado = df_filtrado[
+            df_filtrado["Referencia"].str.lower().str.contains(q)
+            | df_filtrado["Nombre"].str.lower().str.contains(q)
+        ]
 
-            if usar_guardado:
-                archivo_excel = None
-                st.session_state["df_excel_cache"] = inventario_guardado
-                st.session_state["usando_guardado"] = True
-            else:
-                st.session_state["usando_guardado"] = False
+    # ── TABLA ─────────────────────────────────────────────────────────────────
+    st.markdown(
+        f'<div class="cs-section">📋 Resultados <span style="font-size:11px;font-weight:400;color:var(--text-muted);text-transform:none;letter-spacing:0">— {len(df_filtrado)} registros</span></div>',
+        unsafe_allow_html=True,
+    )
 
-        # Si no usa guardado o no hay guardado, mostrar uploader
-        if inventario_guardado is None or not st.session_state.get(
-            "usando_guardado", False
-        ):
-            archivo_excel = st.file_uploader(
-                "Sube tu archivo Excel con el inventario mínimo",
-                type=["xlsx", "xls"],
-                help="El archivo debe contener: Referencia, Nombre, Inventario Mínimo por gramos",
-                label_visibility="collapsed",
-            )
+    def colorear_estado(val):
+        if "Crítico" in str(val):
+            return "background-color:#ffcdd2;color:#b71c1c;font-weight:600"
+        elif "Bajo" in str(val) and "Crítico" not in str(val):
+            return "background-color:#fff9c4;color:#e65100;font-weight:600"
+        elif "OK" in str(val):
+            return "background-color:#c8e6c9;color:#1b5e20;font-weight:600"
+        elif "No encontrado" in str(val):
+            return "background-color:#ffccbc;color:#bf360c;font-weight:600"
+        return ""
 
-            # Guardar el archivo en la sesión
-            if archivo_excel is not None:
-                st.session_state["ultimo_excel"] = archivo_excel
-            elif "ultimo_excel" in st.session_state:
-                archivo_excel = st.session_state["ultimo_excel"]
+    df_styled = df_filtrado.style.map(colorear_estado, subset=["Estado"]).format(
+        {"Mínimo (g)": "{:,.0f}", "Stock Actual": "{:,.0f}", "Diferencia": "{:,.0f}"}
+    )
+    st.dataframe(df_styled, use_container_width=True, hide_index=True)
 
-    with col2:
-        with st.expander("📋 Formato requerido"):
-            st.markdown(
-                """
-            **Columnas necesarias:**
-            - Referencia
-            - Nombre  
-            - Inventario Mínimo
-            """
-            )
+    # ── EXPORTAR ──────────────────────────────────────────────────────────────
+    df_faltantes = df_resultado[
+        df_resultado["Estado"].str.contains("Crítico|Bajo", regex=True)
+    ].copy()
 
-    # Procesar si hay archivo cargado o inventario guardado
-    if archivo_excel or st.session_state.get("usando_guardado", False):
-        try:
-            # Cargar Excel solo si es nuevo o se forzó actualización
-            if "df_excel_cache" not in st.session_state or (
-                "forzar_actualizacion" in st.session_state and archivo_excel
-            ):
-                if archivo_excel:
-                    with st.spinner("📂 Cargando archivo Excel..."):
-                        df_excel = cargar_excel(archivo_excel)
-                        st.session_state["df_excel_cache"] = df_excel
-                    st.success(
-                        f"✅ Excel cargado: **{len(df_excel)} productos** encontrados"
-                    )
-
-                    # Guardar en Google Sheets automáticamente
-                    with st.spinner("💾 Guardando en la nube..."):
-                        if guardar_inventario_excel(usuario_email, df_excel):
-                            st.success("✅ Inventario guardado en Google Sheets")
-                else:
-                    df_excel = st.session_state["df_excel_cache"]
-            else:
-                df_excel = st.session_state["df_excel_cache"]
-                if not st.session_state.get("usando_guardado", False):
-                    st.info(f"📋 Usando Excel en sesión: **{len(df_excel)} productos**")
-
-            # Obtener datos de Siigo (intentar cargar guardados primero)
-            if (
-                "df_siigo_cache" not in st.session_state
-                or "forzar_actualizacion" in st.session_state
-            ):
-                # Intentar cargar datos guardados en Google Sheets
-                datos_guardados = None
-                if "forzar_actualizacion" not in st.session_state:
-                    with st.spinner("🔍 Buscando datos de Siigo guardados..."):
-                        datos_guardados = cargar_productos_siigo_guardados()
-
-                if datos_guardados is not None:
-                    # Usar datos guardados
-                    df_siigo, _, ultima_actualizacion = datos_guardados
-                    productos_siigo = []  # No tenemos los productos raw guardados
-                    total_obtenidos = len(df_siigo)
-
-                    st.session_state["df_siigo_cache"] = df_siigo
-                    st.session_state["productos_siigo_cache"] = productos_siigo
-                    st.session_state["total_obtenidos"] = total_obtenidos
-                    st.session_state["ultima_actualizacion"] = ultima_actualizacion
-
-                    st.success(
-                        f"✅ **{total_obtenidos} productos** cargados desde la nube"
-                    )
-                    st.info(
-                        f"⏰ Última actualización: {ultima_actualizacion.strftime('%d/%m/%Y %H:%M:%S')}"
-                    )
-                else:
-                    # Obtener datos frescos de Siigo
-                    st.info("🔄 Obteniendo productos de Siigo...")
-
-                    with st.spinner("Descargando productos de Siigo con paginación..."):
-                        resultado = obtener_todos_los_productos_siigo(
-                            st.session_state["token_siigo"]
-                        )
-
-                    if not resultado["success"]:
-                        st.error(resultado["error"])
-                        st.stop()
-
-                    productos_siigo = resultado["data"]
-                    total_obtenidos = resultado.get("total", len(productos_siigo))
-
-                    with st.spinner("⚙️ Procesando productos..."):
-                        df_siigo = procesar_productos_siigo(productos_siigo)
-
-                    # Guardar en cache de sesión
-                    st.session_state["df_siigo_cache"] = df_siigo
-                    st.session_state["productos_siigo_cache"] = productos_siigo
-                    st.session_state["total_obtenidos"] = total_obtenidos
-                    st.session_state["ultima_actualizacion"] = datetime.now()
-
-                    st.success(f"✅ **{total_obtenidos} productos** obtenidos de Siigo")
-                    st.success(
-                        f"✅ **{len(df_siigo)} productos** procesados correctamente"
-                    )
-
-                    # Guardar en Google Sheets para próximas sesiones
-                    with st.spinner("💾 Guardando en la nube..."):
-                        if guardar_productos_siigo(productos_siigo):
-                            st.success("✅ Datos guardados en Google Sheets")
-
-                # Limpiar flag de actualización
-                if "forzar_actualizacion" in st.session_state:
-                    del st.session_state["forzar_actualizacion"]
-            else:
-                # Usar datos en cache de sesión
-                df_siigo = st.session_state["df_siigo_cache"]
-                productos_siigo = st.session_state.get("productos_siigo_cache", [])
-                total_obtenidos = st.session_state.get("total_obtenidos", len(df_siigo))
-                st.info(f"📊 Usando datos en memoria: **{len(df_siigo)} productos**")
-
-            # Mostrar última actualización
-            if "ultima_actualizacion" not in st.session_state:
-                st.session_state["ultima_actualizacion"] = datetime.now()
-
-            col_update1, col_update2 = st.columns([3, 1])
-            with col_update1:
-                st.caption(
-                    f"⏰ Última actualización: {st.session_state['ultima_actualizacion'].strftime('%d/%m/%Y %H:%M:%S')}"
-                )
-
-            # Actualizar timestamp
-            st.session_state["ultima_actualizacion"] = datetime.now()
-
-            # Debug: Mostrar información de productos obtenidos
-            with st.expander("🔍 Ver detalles técnicos"):
-                st.write(f"Total productos obtenidos de API: {total_obtenidos}")
-                st.write(f"Total productos procesados válidos: {len(df_siigo)}")
-                if len(productos_siigo) > 0:
-                    st.write("Ejemplo del primer producto:")
-                    st.json(productos_siigo[0])
-                    st.write("Productos procesados (primeros 20):")
-                    st.dataframe(df_siigo.head(20))
-                else:
-                    st.warning("No se obtuvieron productos de Siigo")
-
-            # Cruzar inventarios
-            with st.spinner("Procesando inventarios..."):
-                df_resultado = cruzar_inventarios(df_excel, df_siigo)
-
-            st.markdown("---")
-
-            # Métricas resumen con diseño moderno
-            st.markdown("### 📊 Resumen del Inventario")
-
-            col1, col2, col3, col4 = st.columns(4)
-
-            total = len(df_resultado)
-            criticos = len(df_resultado[df_resultado["Estado"].str.contains("Crítico")])
-            bajos = len(df_resultado[df_resultado["Estado"].str.contains("Bajo")])
-            ok = len(df_resultado[df_resultado["Estado"].str.contains("OK")])
-            no_encontrados = len(
-                df_resultado[df_resultado["Estado"].str.contains("No encontrado")]
-            )
-
-            with col1:
-                st.metric("📦 Total", total, help="Total de productos analizados")
-            with col2:
-                st.metric(
-                    "🔴 Críticos",
-                    criticos,
-                    delta=f"-{criticos}" if criticos > 0 else "0",
-                    delta_color="inverse",
-                    help="Productos por debajo del inventario mínimo",
-                )
-            with col3:
-                st.metric("🟡 Bajos", bajos, help="Productos con stock bajo")
-            with col4:
-                st.metric("🟢 OK", ok, help="Productos con stock suficiente")
-
-            if no_encontrados > 0:
-                st.warning(
-                    f"⚠️ **{no_encontrados} producto(s)** no encontrado(s) en Siigo"
-                )
-
-                # Mostrar lista de productos no encontrados
-                with st.expander("📋 Ver productos no encontrados en Siigo"):
-                    df_no_encontrados = df_resultado[
-                        df_resultado["Estado"].str.contains("No encontrado")
-                    ][["Referencia", "Nombre", "Mínimo (g)"]].copy()
-
-                    st.dataframe(
-                        df_no_encontrados, use_container_width=True, hide_index=True
-                    )
-
-                    st.info(
-                        "💡 Verifica que estas referencias existan en Siigo o actualiza el Excel"
-                    )
-
-            st.markdown("---")
-
-            # Filtros con diseño mejorado
-            st.markdown("### 🔍 Filtrar y Buscar")
-
-            col1, col2 = st.columns(2)
-
-            with col1:
-                filtro_estado = st.multiselect(
-                    "Estado del producto",
-                    options=[
-                        "🔴 Crítico",
-                        "🟡 Bajo",
-                        "🟢 OK",
-                        "⚠️ No encontrado en Siigo",
-                    ],
-                    default=["🔴 Crítico", "🟡 Bajo"],
-                )
-
-            with col2:
-                buscar = st.text_input(
-                    "🔎 Buscar", placeholder="Nombre o referencia..."
-                )
-
-            # Aplicar filtros
-            df_filtrado = df_resultado.copy()
-
-            if filtro_estado:
-                mask = df_filtrado["Estado"].apply(
-                    lambda x: any(estado in x for estado in filtro_estado)
-                )
-                df_filtrado = df_filtrado[mask]
-
-            if buscar:
-                mask = df_filtrado["Referencia"].str.contains(
-                    buscar, case=False, na=False
-                ) | df_filtrado["Nombre"].str.contains(buscar, case=False, na=False)
-                df_filtrado = df_filtrado[mask]
-
-            # Mostrar tabla con diseño mejorado
-            st.markdown(f"### 📋 Resultados: **{len(df_filtrado)}** productos")
-
-            # Colorear DataFrame
-            def colorear_estado(val):
-                if "Crítico" in str(val):
-                    return "background-color: #ffcdd2"
-                elif "Bajo" in str(val):
-                    return "background-color: #fff9c4"
-                elif "OK" in str(val):
-                    return "background-color: #c8e6c9"
-                elif "No encontrado" in str(val):
-                    return "background-color: #ffccbc"
-                return ""
-
-            df_styled = df_filtrado.style.applymap(
-                colorear_estado, subset=["Estado"]
-            ).format(
-                {
-                    "Mínimo (g)": "{:,.0f}",
-                    "Stock Actual": "{:,.0f}",
-                    "Diferencia": "{:,.0f}",
-                }
-            )
-
-            st.dataframe(df_styled, use_container_width=True, height=450)
-
-            st.markdown("---")
-
-            # Botones de exportación con diseño moderno
-            st.markdown("### 📥 Exportar Reportes")
-
-            col1, col2, col3 = st.columns(3)
-
-            # Solo productos críticos y bajos para impresión
-            df_faltantes = df_resultado[
-                df_resultado["Estado"].str.contains("Crítico|Bajo", regex=True)
-            ].copy()
-
-            with col1:
-                # Botón para generar HTML de impresión
-                if st.button("🖨️ Imprimir Lista de Faltantes", use_container_width=True):
-                    if len(df_faltantes) > 0:
-                        html_content = generar_html_impresion(
-                            df_faltantes, "Lista de Productos Faltantes - Colsabor"
-                        )
-
-                        # Codificar en base64 para abrir en nueva pestaña
-                        b64 = base64.b64encode(html_content.encode()).decode()
-                        href = f'<a href="data:text/html;base64,{b64}" target="_blank" style="text-decoration: none;"><button style="background-color: #1E88E5; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; width: 100%;">📄 Abrir Vista de Impresión</button></a>'
-                        st.markdown(href, unsafe_allow_html=True)
-                        st.info(
-                            "💡 Se abrirá una nueva pestaña. Usa Ctrl+P para imprimir."
-                        )
-                    else:
-                        st.info("No hay productos faltantes para imprimir")
-
-            with col2:
-                # Descargar Excel
-                if len(df_faltantes) > 0:
-                    excel_data = generar_excel_descarga(df_faltantes)
-                    st.download_button(
-                        label="📥 Descargar Excel Faltantes",
-                        data=excel_data,
-                        file_name=f"faltantes_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                    )
-
-            with col3:
-                # Descargar Excel completo
-                excel_completo = generar_excel_descarga(df_resultado)
-                st.download_button(
-                    label="📥 Descargar Excel Completo",
-                    data=excel_completo,
-                    file_name=f"inventario_completo_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True,
-                )
-
-            # Vista previa
-            with st.expander("👁️ Vista previa de faltantes"):
-                if len(df_faltantes) > 0:
-                    st.dataframe(
-                        df_faltantes, use_container_width=True, hide_index=True
-                    )
-                else:
-                    st.success(
-                        "🎉 ¡Excelente! No hay productos con stock crítico o bajo."
-                    )
-
-        except ValueError as e:
-            st.error(f"❌ {str(e)}")
-        except Exception as e:
-            st.error(f"❌ Error inesperado: {str(e)}")
-            with st.expander("Ver detalles del error"):
-                st.exception(e)
-
-    else:
-        # Pantalla de bienvenida cuando no hay archivo
-        st.markdown("<br>", unsafe_allow_html=True)
-
-        col1, col2, col3 = st.columns([1, 3, 1])
-        with col2:
-            st.info(
-                "👆 **Sube un archivo Excel** para comenzar el análisis de inventario"
-            )
-
-        with st.expander("📝 Ver ejemplo de formato Excel"):
-            st.markdown("**Formato requerido del archivo:**")
-            ejemplo_df = pd.DataFrame(
-                {
-                    "Referencia": ["REF001", "REF002", "REF003", "REF004", "REF005"],
-                    "Nombre": [
-                        "Harina de Trigo 1kg",
-                        "Azúcar Refinada 1kg",
-                        "Sal Marina 500g",
-                        "Aceite Vegetal 1L",
-                        "Mantequilla 250g",
-                    ],
-                    "Inventario Mínimo por gramos": [500, 300, 200, 400, 100],
-                }
-            )
-            st.dataframe(ejemplo_df, use_container_width=True, hide_index=True)
-
-            # Descargar plantilla
-            plantilla_excel = generar_excel_descarga(ejemplo_df)
+    if len(df_faltantes) > 0:
+        st.markdown('<div class="cs-section">📥 Exportar</div>', unsafe_allow_html=True)
+        dc1, dc2, dc3 = st.columns(3)
+        with dc1:
             st.download_button(
-                label="⬇️ Descargar Plantilla Excel",
-                data=plantilla_excel,
-                file_name="plantilla_inventario_minimo.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "📥 Faltantes (CSV)",
+                data=generar_csv_descarga(df_faltantes),
+                file_name=f"faltantes_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                mime="text/csv",
                 use_container_width=True,
             )
+        with dc2:
+            st.download_button(
+                "📥 Inventario Completo (CSV)",
+                data=generar_csv_descarga(df_resultado),
+                file_name=f"inventario_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+        with dc3:
+            st.markdown(
+                f'<div style="padding:12px 0;color:var(--text-muted);font-size:12px">🔴&nbsp;{criticos} crítico(s) · 🟡&nbsp;{bajos} bajo(s) de {total} totales</div>',
+                unsafe_allow_html=True,
+            )
+    else:
+        st.success("🎉 ¡Excelente! No hay productos con stock crítico o bajo.")
 
-    # Footer moderno
-    st.markdown("---")
+    # ── DETALLES TÉCNICOS ─────────────────────────────────────────────────────
+    with st.expander("⚙️ Detalles técnicos"):
+        st.caption(f"Inventario mínimo: {len(df_excel)} referencias")
+        st.caption(f"Productos en Siigo: {len(df_siigo)}")
+        st.caption(
+            f"Última actualización: {st.session_state['ultima_actualizacion'].strftime('%d/%m/%Y %H:%M:%S')}"
+        )
+        if len(st.session_state.get("productos_siigo_cache", [])) > 0:
+            st.dataframe(df_siigo.head(10), use_container_width=True)
+
+    # ── FOOTER ────────────────────────────────────────────────────────────────
     st.markdown(
         """
-        <div style='text-align: center; padding: 20px;'>
-            <p style='color: #1976D2; font-weight: 600; margin: 5px;'>Monitor de Inventario Colsabor</p>
-            <p style='color: #999; font-size: 12px; margin: 5px;'>Sistema inteligente de control de stock © 2026</p>
+        <div style="margin-top:48px;padding-top:20px;border-top:1px solid var(--border-subtle);text-align:center">
+          <p style="color:var(--text-muted);font-size:12px;letter-spacing:0.04em;margin:0">
+            COLSABOR S.A.S &nbsp;·&nbsp; Monitor de Inventario &nbsp;·&nbsp; © 2026
+          </p>
         </div>
         """,
         unsafe_allow_html=True,
