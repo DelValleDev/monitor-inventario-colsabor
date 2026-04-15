@@ -34,6 +34,7 @@ TABLE_SIIGO_CACHE = "siigo_products_cache"
 ALLOWED_EMAILS = {
     "dirtec@colsabor.com.co",
     "gerencia@colsabor.com.co",
+    "samuelrestrepodev@gmail.com",
 }
 
 # ============================================================================
@@ -806,12 +807,18 @@ _LOGO_SM = (
 )
 
 _LOGO_LG = (
-    '<svg width="30" height="30" viewBox="0 0 30 30" fill="none" xmlns="http://www.w3.org/2000/svg">'
-    '<rect width="30" height="30" rx="9" fill="rgba(255,255,255,0.08)"/>'
-    '<circle cx="15" cy="15" r="10" stroke="rgba(255,255,255,0.14)" stroke-width="1"/>'
-    '<path d="M10.5 11.5C10.5 9.5 12 8.2 15 8.2C18 8.2 19.5 9.5 19.5 11.4C19.5 13.6 17.2 14.7 15 15.7'
-    'C12.8 16.7 10.5 17.8 10.5 20C10.5 21.9 12 23.3 15 23.3C18 23.3 19.5 21.8 19.5 20.6"'
-    ' stroke="white" stroke-width="2" stroke-linecap="round" fill="none"/></svg>'
+    '<svg width="120" height="48" viewBox="0 0 120 48" fill="none" xmlns="http://www.w3.org/2000/svg">'
+    '<rect width="120" height="48" rx="12" fill="rgba(255,255,255,0.07)"/>'
+    '<rect x="10" y="10" width="28" height="28" rx="8" fill="url(#lg)"/>'
+    '<defs><linearGradient id="lg" x1="10" y1="10" x2="38" y2="38" gradientUnits="userSpaceOnUse">'
+    '<stop stop-color="#3b82f6"/><stop offset="1" stop-color="#0891b2"/></linearGradient></defs>'
+    '<text x="26" y="29" font-family="Arial,sans-serif" font-size="13" font-weight="900" '
+    'fill="white" text-anchor="middle" letter-spacing="-0.5">CS</text>'
+    '<text x="50" y="26" font-family="Arial,sans-serif" font-size="13" font-weight="800" '
+    'fill="white" letter-spacing="-0.3">COLSABOR</text>'
+    '<text x="50" y="38" font-family="Arial,sans-serif" font-size="7.5" font-weight="500" '
+    'fill="rgba(255,255,255,0.55)" letter-spacing="1.2">S.A.S</text>'
+    '</svg>'
 )
 
 
@@ -933,27 +940,33 @@ def main():
     # ── LOGIN ────────────────────────────────────────────────────────────────
     if "token_siigo" not in st.session_state:
         st.markdown(
-            f"""
+                f"""
             <div class="cs-login-wrap">
               <div class="cs-login-card">
-                <div class="cs-login-logo-ring">{_LOGO_LG}</div>
-                <div class="cs-login-company">COLSABOR</div>
-                <div class="cs-login-subtitle">S.A.S &middot; Sistema de Inventario</div>
+                <div style="display:flex;justify-content:center;margin-bottom:20px">{_LOGO_LG}</div>
+                <div class="cs-login-subtitle">Sistema de Inventario</div>
               </div>
             </div>
             """,
-            unsafe_allow_html=True,
-        )
+                unsafe_allow_html=True,
+            )
         _, col, _ = st.columns([1, 1.1, 1])
         with col:
             st.markdown(
                 "<style>.cs-login-wrap{margin-bottom:-310px}</style>",
                 unsafe_allow_html=True,
             )
-            st.markdown(
-                '<div style="text-align:center;margin-bottom:20px"><span class="cs-badge">🔒 Acceso Restringido</span></div>',
-                unsafe_allow_html=True,
-            )
+            # ── Tema ──────────────────────────────────────────────────────
+            _theme = st.session_state.get("theme_override", "auto")
+            _theme_icon = "☀️" if _theme == "dark" else "🌙"
+            tc, _ = st.columns([1, 6])
+            with tc:
+                st.markdown('<div class="cs-btn-ghost">', unsafe_allow_html=True)
+                if st.button(_theme_icon, help="Cambiar tema", key="login_theme"):
+                    st.session_state["theme_override"] = "light" if _theme == "dark" else "dark"
+                    st.rerun()
+                st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown('<div style="text-align:center;margin-bottom:20px"><span class="cs-badge">🔒 Acceso Restringido</span></div>', unsafe_allow_html=True)
             usuario_email = st.text_input(
                 "Correo corporativo",
                 placeholder="nombre@colsabor.com.co",
