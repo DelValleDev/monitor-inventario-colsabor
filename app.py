@@ -650,7 +650,7 @@ html, body, [class*="st-"], .stApp {
 }
 #MainMenu, footer, header { visibility: hidden !important; }
 [data-testid="stSidebar"] { display: none !important; }
-.block-container { padding: 0 2rem 6rem !important; max-width: 1440px !important; }
+.block-container { padding: 0 2rem 6rem !important; max-width: 1440px !important; margin: 0 auto !important; }
 
 /* ── Navbar ───────────────────────────────────────────────────────── */
 .cs-nav {
@@ -737,7 +737,7 @@ html, body, [class*="st-"], .stApp {
 .cs-panel { background: var(--bg-surface); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid var(--border-subtle); border-radius: 20px; padding: 20px 24px; box-shadow: var(--shadow-sm); margin-bottom: 20px; animation: cs-rise 0.5s cubic-bezier(0.16,1,0.3,1) 0.2s both; }
 
 /* ── Login ───────────────────────────────────────────────────────── */
-.cs-login-wrap { min-height: calc(100vh - 58px); display: flex; align-items: center; justify-content: center; padding: 40px 20px; }
+.cs-login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 40px 20px; }
 .cs-login-card {
   width: 100%; max-width: 395px; position: relative; overflow: hidden;
   background: var(--bg-surface); backdrop-filter: blur(40px) saturate(200%); -webkit-backdrop-filter: blur(40px) saturate(200%);
@@ -770,6 +770,7 @@ html, body, [class*="st-"], .stApp {
 .stTextInput > div > div > input:focus { border-color: var(--accent) !important; box-shadow: 0 0 0 3px var(--accent-glow) !important; }
 label[data-baseweb="form-control-label"] { color: var(--text-secondary) !important; font-size: 12px !important; font-weight: 600 !important; font-family: 'Inter', sans-serif !important; }
 [data-baseweb="tag"] { background: var(--accent-light) !important; color: var(--accent) !important; border: 1px solid rgba(37,99,235,0.15) !important; border-radius: 6px !important; }
+.stTextInput > div > div > input::placeholder { color: var(--text-muted) !important; opacity: 0.5 !important; }
 
 /* ── Data Table ──────────────────────────────────────────────────── */
 .stDataFrame { border-radius: 16px !important; overflow: hidden !important; }
@@ -792,6 +793,7 @@ label[data-baseweb="form-control-label"] { color: var(--text-secondary) !importa
 @keyframes cs-scale-in { from { opacity:0; transform:scale(0.95) translateY(10px); } to { opacity:1; transform:scale(1) translateY(0); } }
 @keyframes cs-live { 0%,100% { box-shadow:0 0 6px var(--green); opacity:1; } 50% { box-shadow:0 0 14px var(--green); opacity:0.5; } }
 @keyframes cs-nav-scan { 0% { left:-100%; } 100% { left:250%; } }
+@keyframes cs-orb-drift { 0%,100% { transform:translate(0,0) scale(1); } 33% { transform:translate(35px,-25px) scale(1.04); } 66% { transform:translate(-18px,32px) scale(0.96); } }
 
 @media print { .cs-nav, .stButton, .stDownloadButton { display: none !important; } }
 </style>
@@ -818,7 +820,7 @@ _LOGO_LG = (
     'fill="white" letter-spacing="-0.3">COLSABOR</text>'
     '<text x="50" y="38" font-family="Arial,sans-serif" font-size="7.5" font-weight="500" '
     'fill="rgba(255,255,255,0.55)" letter-spacing="1.2">S.A.S</text>'
-    '</svg>'
+    "</svg>"
 )
 
 
@@ -939,8 +941,22 @@ def main():
 
     # ── LOGIN ────────────────────────────────────────────────────────────────
     if "token_siigo" not in st.session_state:
+        # Cosmic Forge background — deep dark with glowing energy orbs
+        st.html(
+            """<style>
+.stApp {
+  background: #010814 !important;
+  background-image:
+    radial-gradient(ellipse 80% 70% at 10% 20%, rgba(59,130,246,0.24) 0%, transparent 60%),
+    radial-gradient(ellipse 65% 80% at 90% 85%, rgba(6,182,212,0.20) 0%, transparent 60%),
+    radial-gradient(ellipse 55% 50% at 58% 0%, rgba(99,102,241,0.16) 0%, transparent 60%),
+    radial-gradient(circle at 1px 1px, rgba(59,130,246,0.07) 1px, transparent 0) !important;
+  background-size: auto, auto, auto, 28px 28px !important;
+}
+</style>"""
+        )
         st.markdown(
-                f"""
+            f"""
             <div class="cs-login-wrap">
               <div class="cs-login-card">
                 <div style="display:flex;justify-content:center;margin-bottom:20px">{_LOGO_LG}</div>
@@ -948,9 +964,9 @@ def main():
               </div>
             </div>
             """,
-                unsafe_allow_html=True,
-            )
-        _, col, _ = st.columns([1, 1.1, 1])
+            unsafe_allow_html=True,
+        )
+        _, col, _ = st.columns([2, 1.5, 2])
         with col:
             st.markdown(
                 "<style>.cs-login-wrap{margin-bottom:-310px}</style>",
@@ -963,17 +979,22 @@ def main():
             with tc:
                 st.markdown('<div class="cs-btn-ghost">', unsafe_allow_html=True)
                 if st.button(_theme_icon, help="Cambiar tema", key="login_theme"):
-                    st.session_state["theme_override"] = "light" if _theme == "dark" else "dark"
+                    st.session_state["theme_override"] = (
+                        "light" if _theme == "dark" else "dark"
+                    )
                     st.rerun()
                 st.markdown("</div>", unsafe_allow_html=True)
-            st.markdown('<div style="text-align:center;margin-bottom:20px"><span class="cs-badge">🔒 Acceso Restringido</span></div>', unsafe_allow_html=True)
+            st.markdown(
+                '<div style="text-align:center;margin-bottom:20px"><span class="cs-badge">🔒 Acceso Restringido</span></div>',
+                unsafe_allow_html=True,
+            )
             usuario_email = st.text_input(
                 "Correo corporativo",
                 placeholder="nombre@colsabor.com.co",
                 key="email_input",
             )
             usuario_password = st.text_input(
-                "Contraseña", type="password", key="password_input"
+                "Contraseña", type="password", placeholder="••••••••", key="password_input"
             )
             st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
             if st.button("Iniciar Sesión →", use_container_width=True, type="primary"):
