@@ -817,48 +817,60 @@ _LOGO_LG = (
 
 def _inject_css():
     theme = st.session_state.get("theme_override", "auto")
-    st.markdown(_MAIN_CSS, unsafe_allow_html=True)
+    st.html(_MAIN_CSS)
     if theme == "dark":
-        st.markdown(f"<style>:root {{ {_VARS_DARK} }}</style>", unsafe_allow_html=True)
+        st.html(f"<style>:root {{ {_VARS_DARK} }}</style>")
     elif theme == "light":
-        st.markdown(
+        st.html(
             f"<style>:root {{ {_VARS_LIGHT} }} @media (prefers-color-scheme: dark) {{ :root {{ {_VARS_LIGHT} }} }}</style>",
-            unsafe_allow_html=True,
         )
 
 
 # ── Plotly chart helpers ──────────────────────────────────────────────────────
 
-def _build_donut_chart(criticos: int, bajos: int, ok: int, no_encontrados: int, total: int):
+
+def _build_donut_chart(
+    criticos: int, bajos: int, ok: int, no_encontrados: int, total: int
+):
     """Donut chart showing inventory status distribution."""
     labels = ["Crítico", "Bajo", "OK", "No encontrado"]
     values = [criticos, bajos, ok, no_encontrados]
     colors = ["#ef4444", "#f59e0b", "#10b981", "#64748b"]
     pct_ok = round(100 * ok / total) if total else 0
 
-    fig = go.Figure(go.Pie(
-        labels=labels,
-        values=values,
-        hole=0.70,
-        marker=dict(colors=colors, line=dict(width=0)),
-        textinfo="none",
-        hovertemplate="%{label}: %{value}<br>%{percent}<extra></extra>",
-    ))
+    fig = go.Figure(
+        go.Pie(
+            labels=labels,
+            values=values,
+            hole=0.70,
+            marker=dict(colors=colors, line=dict(width=0)),
+            textinfo="none",
+            hovertemplate="%{label}: %{value}<br>%{percent}<extra></extra>",
+        )
+    )
     fig.add_annotation(
         text=(
             f"<b style='font-size:22px'>{pct_ok}%</b>"
             "<br><span style='font-size:9px;color:#64748b;letter-spacing:2px'>SALUDABLE</span>"
         ),
-        x=0.5, y=0.5, showarrow=False, align="center",
+        x=0.5,
+        y=0.5,
+        showarrow=False,
+        align="center",
         font=dict(size=14, family="JetBrains Mono, monospace", color="#94a3b8"),
     )
     fig.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        margin=dict(t=10, b=10, l=10, r=10), height=240,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        margin=dict(t=10, b=10, l=10, r=10),
+        height=240,
         showlegend=True,
         legend=dict(
-            orientation="h", yanchor="bottom", y=-0.28,
-            xanchor="center", x=0.5,
+            orientation="h",
+            yanchor="bottom",
+            y=-0.28,
+            xanchor="center",
+            x=0.5,
             font=dict(size=10, color="#64748b", family="Inter, sans-serif"),
         ),
         font=dict(family="Inter, sans-serif"),
@@ -869,35 +881,43 @@ def _build_donut_chart(criticos: int, bajos: int, ok: int, no_encontrados: int, 
 def _build_deficit_chart(df_deficit: pd.DataFrame):
     """Horizontal bar chart of top items with the largest stock deficit."""
     labels = (
-        df_deficit["Referencia"].str[:10]
-        + " · "
-        + df_deficit["Nombre"].str[:16]
+        df_deficit["Referencia"].str[:10] + " · " + df_deficit["Nombre"].str[:16]
     ).tolist()
     values = df_deficit["Diferencia"].tolist()
     bar_colors = [
         "#ef4444" if "Crítico" in str(e) else "#f59e0b"
         for e in df_deficit["Estado"].tolist()
     ]
-    fig = go.Figure(go.Bar(
-        x=values,
-        y=labels,
-        orientation="h",
-        marker=dict(color=bar_colors, opacity=0.88, line=dict(width=0)),
-        text=[f"{v:,.0f}g" for v in values],
-        textposition="outside",
-        textfont=dict(size=10, color="#94a3b8", family="JetBrains Mono, monospace"),
-        hovertemplate="%{y}<br><b>Déficit: %{x:,.0f} g</b><extra></extra>",
-    ))
+    fig = go.Figure(
+        go.Bar(
+            x=values,
+            y=labels,
+            orientation="h",
+            marker=dict(color=bar_colors, opacity=0.88, line=dict(width=0)),
+            text=[f"{v:,.0f}g" for v in values],
+            textposition="outside",
+            textfont=dict(size=10, color="#94a3b8", family="JetBrains Mono, monospace"),
+            hovertemplate="%{y}<br><b>Déficit: %{x:,.0f} g</b><extra></extra>",
+        )
+    )
     fig.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        margin=dict(t=10, b=24, l=8, r=88), height=240,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        margin=dict(t=10, b=24, l=8, r=88),
+        height=240,
         xaxis=dict(
-            showgrid=True, gridcolor="rgba(100,116,139,0.10)", gridwidth=1,
-            color="#475569", zeroline=True, zerolinecolor="rgba(100,116,139,0.20)",
+            showgrid=True,
+            gridcolor="rgba(100,116,139,0.10)",
+            gridwidth=1,
+            color="#475569",
+            zeroline=True,
+            zerolinecolor="rgba(100,116,139,0.20)",
             tickfont=dict(size=9, family="JetBrains Mono, monospace"),
         ),
         yaxis=dict(
-            color="#94a3b8", showgrid=False, automargin=True,
+            color="#94a3b8",
+            showgrid=False,
+            automargin=True,
             tickfont=dict(size=10, family="Inter, sans-serif"),
         ),
         font=dict(family="Inter, sans-serif", color="#94a3b8"),
@@ -1150,7 +1170,9 @@ def main():
     )
 
     # ── ANALYTICS ─────────────────────────────────────────────────────────
-    st.markdown('<div class="cs-section">📊 Análisis Visual</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="cs-section">📊 Análisis Visual</div>', unsafe_allow_html=True
+    )
     ach1, ach2 = st.columns([1, 1.6])
     with ach1:
         st.plotly_chart(
@@ -1159,9 +1181,9 @@ def main():
             config={"displayModeBar": False},
         )
     with ach2:
-        df_deficit = df_resultado[
-            df_resultado["Diferencia"] < 0
-        ].nsmallest(8, "Diferencia")
+        df_deficit = df_resultado[df_resultado["Diferencia"] < 0].nsmallest(
+            8, "Diferencia"
+        )
         if len(df_deficit) > 0:
             st.plotly_chart(
                 _build_deficit_chart(df_deficit),
@@ -1171,7 +1193,7 @@ def main():
         else:
             st.markdown(
                 '<div class="cs-ok-panel"><span style="font-size:28px">🎯</span>'
-                '<div><b>Inventario Saludable</b><br>'
+                "<div><b>Inventario Saludable</b><br>"
                 '<span style="font-size:12px;opacity:.7">Todos los productos en niveles óptimos</span></div></div>',
                 unsafe_allow_html=True,
             )
