@@ -985,33 +985,24 @@ def main():
   width: min(460px, 92vw);
 }
 .st-key-login_theme {
-  position: fixed;
-  top: 16px;
-  left: 16px;
-  z-index: 1100;
+    position: relative;
+    z-index: 5;
   width: auto !important;
+    margin: 0 0 10px 0;
 }
 .st-key-login_theme button {
-  width: 44px !important;
-  min-width: 44px !important;
-  height: 44px !important;
+    width: 40px !important;
+    min-width: 40px !important;
+    height: 40px !important;
   border-radius: 999px !important;
   padding: 0 !important;
 }
 @media (max-width: 640px) {
   .cs-login-shell { min-height: 100svh; padding: 10px; }
   .cs-login-panel { width: 100%; }
-  .st-key-login_theme { top: 10px; left: 10px; }
 }
 </style>"""
         )
-
-        # Toggle en la esquina superior izquierda del login
-        _theme = st.session_state.get("theme_override", "auto")
-        _theme_icon = "☀️" if _theme == "dark" else "🌙"
-        if st.button(_theme_icon, help="Cambiar tema", key="login_theme"):
-            st.session_state["theme_override"] = "light" if _theme == "dark" else "dark"
-            st.rerun()
 
         st.markdown(
             f"""
@@ -1029,6 +1020,15 @@ def main():
 
         _, col, _ = st.columns([1, 1.22, 1])
         with col:
+            # Toggle dentro del panel de login (arriba-izquierda)
+            _theme = st.session_state.get("theme_override", "auto")
+            _theme_icon = "☀️" if _theme == "dark" else "🌙"
+            st.markdown('<div class="cs-btn-ghost">', unsafe_allow_html=True)
+            if st.button(_theme_icon, help="Cambiar tema", key="login_theme"):
+                st.session_state["theme_override"] = "light" if _theme == "dark" else "dark"
+                st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
+
             st.markdown(
                 '<div style="text-align:center;margin-bottom:20px"><span class="cs-badge">🔒 Acceso Restringido</span></div>',
                 unsafe_allow_html=True,
