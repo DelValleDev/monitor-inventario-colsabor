@@ -795,6 +795,23 @@ label[data-baseweb="form-control-label"] { color: var(--text-secondary) !importa
 @keyframes cs-nav-scan { 0% { left:-100%; } 100% { left:250%; } }
 @keyframes cs-orb-drift { 0%,100% { transform:translate(0,0) scale(1); } 33% { transform:translate(35px,-25px) scale(1.04); } 66% { transform:translate(-18px,32px) scale(0.96); } }
 
+/* ── Responsive ───────────────────────────────────────────────────── */
+@media (max-width: 1100px) {
+    .cs-bento { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .cs-charts-row { grid-template-columns: 1fr; }
+}
+@media (max-width: 780px) {
+    .block-container { padding: 0 1rem 2.5rem !important; }
+    .cs-nav { height: auto; padding: 10px 14px; gap: 10px; flex-wrap: wrap; margin: 0 -1rem 1rem; }
+    .cs-nav-right { width: 100%; justify-content: space-between; }
+    .cs-bento { grid-template-columns: 1fr; gap: 10px; }
+    .cs-card { border-radius: 16px; padding: 16px; }
+    .cs-card-value { font-size: 30px; }
+    .cs-panel { border-radius: 16px; padding: 14px; }
+    .cs-health-bar-wrap { flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px 14px; }
+    .cs-health-track { width: 100%; }
+}
+
 @media print { .cs-nav, .stButton, .stDownloadButton { display: none !important; } }
 </style>
 """
@@ -941,7 +958,7 @@ def main():
 
     # ── LOGIN ────────────────────────────────────────────────────────────────
     if "token_siigo" not in st.session_state:
-        # Cosmic Forge background — deep dark with glowing energy orbs
+        # Cosmic Forge background + login shell responsive sin scroll
         st.html(
             """<style>
 .stApp {
@@ -953,37 +970,65 @@ def main():
     radial-gradient(circle at 1px 1px, rgba(59,130,246,0.07) 1px, transparent 0) !important;
   background-size: auto, auto, auto, 28px 28px !important;
 }
+.block-container {
+  max-width: 100% !important;
+  padding: 0 !important;
+}
+.cs-login-shell {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px 14px;
+}
+.cs-login-panel {
+  width: min(460px, 92vw);
+}
+.st-key-login_theme {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 1100;
+  width: auto !important;
+}
+.st-key-login_theme button {
+  width: 44px !important;
+  min-width: 44px !important;
+  height: 44px !important;
+  border-radius: 999px !important;
+  padding: 0 !important;
+}
+@media (max-width: 640px) {
+  .cs-login-shell { min-height: 100svh; padding: 10px; }
+  .cs-login-panel { width: 100%; }
+  .st-key-login_theme { top: 10px; left: 10px; }
+}
 </style>"""
         )
+
+        # Toggle en la esquina superior izquierda del login
+        _theme = st.session_state.get("theme_override", "auto")
+        _theme_icon = "☀️" if _theme == "dark" else "🌙"
+        if st.button(_theme_icon, help="Cambiar tema", key="login_theme"):
+            st.session_state["theme_override"] = "light" if _theme == "dark" else "dark"
+            st.rerun()
+
         st.markdown(
             f"""
-            <div class="cs-login-wrap">
-              <div class="cs-login-card">
-                <div style="display:flex;justify-content:center;margin-bottom:20px">{_LOGO_LG}</div>
-                <div class="cs-login-subtitle">Sistema de Inventario</div>
+            <div class="cs-login-shell">
+              <div class="cs-login-panel">
+                <div class="cs-login-card" style="margin:0">
+                  <div style="display:flex;justify-content:center;margin-bottom:20px">{_LOGO_LG}</div>
+                  <div class="cs-login-subtitle">Sistema de Inventario</div>
+                </div>
               </div>
             </div>
             """,
             unsafe_allow_html=True,
         )
-        _, col, _ = st.columns([2, 1.5, 2])
+
+        _, col, _ = st.columns([1, 1.22, 1])
         with col:
-            st.markdown(
-                "<style>.cs-login-wrap{margin-bottom:-310px}</style>",
-                unsafe_allow_html=True,
-            )
-            # ── Tema ──────────────────────────────────────────────────────
-            _theme = st.session_state.get("theme_override", "auto")
-            _theme_icon = "☀️" if _theme == "dark" else "🌙"
-            tc, _ = st.columns([1, 6])
-            with tc:
-                st.markdown('<div class="cs-btn-ghost">', unsafe_allow_html=True)
-                if st.button(_theme_icon, help="Cambiar tema", key="login_theme"):
-                    st.session_state["theme_override"] = (
-                        "light" if _theme == "dark" else "dark"
-                    )
-                    st.rerun()
-                st.markdown("</div>", unsafe_allow_html=True)
             st.markdown(
                 '<div style="text-align:center;margin-bottom:20px"><span class="cs-badge">🔒 Acceso Restringido</span></div>',
                 unsafe_allow_html=True,
@@ -994,7 +1039,10 @@ def main():
                 key="email_input",
             )
             usuario_password = st.text_input(
-                "Contraseña", type="password", placeholder="••••••••", key="password_input"
+                "Contraseña",
+                type="password",
+                placeholder="••••••••",
+                key="password_input",
             )
             st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
             if st.button("Iniciar Sesión →", use_container_width=True, type="primary"):
