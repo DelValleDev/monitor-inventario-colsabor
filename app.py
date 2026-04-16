@@ -998,7 +998,7 @@ def main():
     _inject_css()
 
     # ── LOGIN ────────────────────────────────────────────────────────────────
-    if "token_siigo" not in st.session_state:
+    if "usuario_email" not in st.session_state:
         _theme = st.session_state.get("theme_override", "auto")
         _theme_icon = "☀️" if _theme == "dark" else "🌙"
 
@@ -1092,14 +1092,7 @@ def main():
                     else:
                         supabase = get_supabase_client()
                         if supabase is None:
-                            # Fallback operativo para entorno sin Supabase:
-                            # permite acceso local a correos autorizados.
-                            st.warning(
-                                "Supabase no disponible. Acceso local habilitado para este usuario."
-                            )
-                            st.session_state["usuario_email"] = email_clean
-                            st.session_state["token_siigo"] = "local-session"
-                            st.rerun()
+                            st.error("Sin conexión a Supabase.")
                         else:
                             with st.spinner("Verificando credenciales…"):
                                 try:
@@ -1110,20 +1103,14 @@ def main():
                                         }
                                     )
                                     if resp.session:
-                                        resultado_siigo = autenticar_siigo(
-                                            "dirtec@colsabor.com.co",
-                                            SIIGO_ACCESS_KEY,
+                                        st.session_state["usuario_email"] = (
+                                            (resp.user.email if resp.user else None)
+                                            or email_clean
                                         )
-                                        if resultado_siigo["success"]:
-                                            st.session_state["token_siigo"] = (
-                                                resultado_siigo["token"]
-                                            )
-                                            st.session_state["usuario_email"] = (
-                                                resp.user.email
-                                            )
-                                            st.rerun()
-                                        else:
-                                            st.error("Error al conectar con Siigo.")
+                                        # Renueva token Siigo más adelante al cargar datos.
+                                        if "token_siigo" in st.session_state:
+                                            del st.session_state["token_siigo"]
+                                        st.rerun()
                                     else:
                                         st.error("Credenciales incorrectas.")
                                 except Exception as e:
@@ -1225,6 +1212,19 @@ def main():
                 }
             )
         else:
+            if "token_siigo" not in st.session_state:
+                resultado_siigo = autenticar_siigo(
+                    "dirtec@colsabor.com.co",
+                    SIIGO_ACCESS_KEY,
+                )
+                if not resultado_siigo["success"]:
+                    st.error(
+                        "Inicio de sesión correcto en Supabase, pero no fue posible conectar con Siigo."
+                    )
+                    st.error(resultado_siigo["error"])
+                    st.stop()
+                st.session_state["token_siigo"] = resultado_siigo["token"]
+
             with st.spinner("Descargando productos de Siigo…"):
                 resultado = obtener_todos_los_productos_siigo(
                     st.session_state["token_siigo"]
