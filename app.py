@@ -70,6 +70,14 @@ def _load_supabase_from_local_secrets() -> tuple[str, str]:
     return "", ""  # pragma: no cover
 
 
+# Anon key pública del proyecto Supabase (seguro incluir en código fuente)
+_SUPABASE_URL_DEFAULT = "https://uinqrkxlkjowixmtzold.supabase.co"
+_SUPABASE_KEY_DEFAULT = (
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
+    ".eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVpbnFya3hsa2pvd2l4bXR6b2xkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyMTg2OTgsImV4cCI6MjA5MTc5NDY5OH0"
+    ".ifGRvqwAtI-6D72_BC7uih-88boy2wcseBUEi-o_0ek"
+)
+
 _log.debug("[INIT] cargando credenciales de st.secrets...")
 SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
@@ -84,12 +92,20 @@ if not SUPABASE_URL or not SUPABASE_KEY:
     SUPABASE_URL = SUPABASE_URL or _fallback_url
     SUPABASE_KEY = SUPABASE_KEY or _fallback_key
     _log.debug(
-        "[INIT] tras fallback -> URL=%s KEY_prefix=%s",
+        "[INIT] tras fallback local -> URL=%s KEY_prefix=%s",
         (SUPABASE_URL or "VACIO")[:35],
         (SUPABASE_KEY or "VACIO")[:20],
     )
-else:
-    _log.debug("[INIT] credenciales cargadas desde st.secrets OK")  # pragma: no cover
+if not SUPABASE_URL or not SUPABASE_KEY:  # pragma: no cover
+    _log.debug("[INIT] fallback a constantes hardcodeadas (anon key publica)")  # pragma: no cover
+    SUPABASE_URL = SUPABASE_URL or _SUPABASE_URL_DEFAULT  # pragma: no cover
+    SUPABASE_KEY = SUPABASE_KEY or _SUPABASE_KEY_DEFAULT  # pragma: no cover
+_log.debug(
+    "[INIT] credenciales finales -> URL=%s KEY_prefix=%s KEY_len=%d",
+    SUPABASE_URL[:40],
+    SUPABASE_KEY[:20],
+    len(SUPABASE_KEY),
+)
 
 # Nombres de las tablas en Supabase
 TABLE_INVENTARIO = "user_inventory"
