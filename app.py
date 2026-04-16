@@ -838,7 +838,8 @@ _LOGO_DATA_URI = _load_logo_data_uri()
 
 _LOGO_SM = (
     f'<img src="{_LOGO_DATA_URI}" alt="Colsabor" '
-    'style="width:20px;height:20px;object-fit:contain;display:block"/>'
+    'style="width:20px;height:20px;object-fit:cover;object-position:center 72%;'
+    'display:block;filter:brightness(1.25) contrast(1.15) saturate(1.2);"/>'
     if _LOGO_DATA_URI
     else (
         '<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">'
@@ -850,8 +851,13 @@ _LOGO_SM = (
 )
 
 _LOGO_LG = (
+    f'<div style="width:300px;max-width:100%;height:112px;overflow:hidden;'
+    f'display:flex;justify-content:center;align-items:flex-start;margin:0 auto;">'
     f'<img src="{_LOGO_DATA_URI}" alt="Colsabor" '
-    'style="width:280px;max-width:100%;height:auto;display:block;filter:drop-shadow(0 10px 22px rgba(0,0,0,0.35));"/>'
+    'style="width:300px;max-width:100%;height:auto;display:block;'
+    'transform:translateY(-58px);filter:brightness(1.38) contrast(1.18) '
+    'saturate(1.25) drop-shadow(0 10px 20px rgba(0,0,0,0.45));"/>'
+    '</div>'
     if _LOGO_DATA_URI
     else (
         '<svg width="120" height="48" viewBox="0 0 120 48" fill="none" xmlns="http://www.w3.org/2000/svg">'
