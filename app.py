@@ -5,6 +5,7 @@ Aplicación Streamlit para monitorear inventario conectado a Siigo API
 
 import logging
 import sys
+import time
 import streamlit as st
 import pandas as pd
 import requests
@@ -14,6 +15,7 @@ import tomllib
 from datetime import datetime
 from pathlib import Path
 from supabase import create_client
+from inventory_monitor.loading_messages import get_greeting, get_random_message
 
 # ── Debug logger (imprime en consola/terminal donde corre Streamlit) ──────────
 logging.basicConfig(
@@ -875,24 +877,32 @@ label[data-baseweb="form-control-label"] { color: var(--text-secondary) !importa
 .stPlotlyChart { border-radius: 16px !important; overflow: hidden !important; background: transparent !important; }
 
 /* ── Expander ────────────────────────────────────────────────────── */
-[data-testid="stExpander"] > details > summary {
-  background: var(--bg-surface) !important;
+[data-testid="stExpander"] {
   border: 1px solid var(--border-subtle) !important;
   border-radius: 12px !important;
+  overflow: hidden !important;
+}
+[data-testid="stExpander"] > details > summary {
+  background: var(--bg-surface) !important;
+  border: none !important;
+  border-radius: 0 !important;
   color: var(--text-secondary) !important;
   font-family: 'Inter', sans-serif !important;
   font-size: 12px !important;
   font-weight: 600 !important;
-  list-style: revert !important;
+  padding: 10px 14px !important;
+}
+[data-testid="stExpander"] > details > summary::marker,
+[data-testid="stExpander"] > details > summary::-webkit-details-marker {
+  display: none !important;
 }
 [data-testid="stExpander"] > details[open] > summary {
-  border-radius: 12px 12px 0 0 !important;
+  border-bottom: 1px solid var(--border-subtle) !important;
 }
 [data-testid="stExpander"] > details > div {
   background: var(--bg-glass) !important;
-  border: 1px solid var(--border-subtle) !important;
-  border-top: none !important;
-  border-radius: 0 0 12px 12px !important;
+  border: none !important;
+  border-radius: 0 !important;
 }
 
 /* ── Alerts ──────────────────────────────────────────────────────── */
@@ -1003,105 +1013,202 @@ def _inject_css():
 
 
 def _render_loading(msg: str):
-    """Pantalla de carga completa que mantiene el navbar visible."""
+    """Pantalla de carga fullscreen estática con saludo y mensaje random."""
     usuario_email = st.session_state.get("usuario_email", "")
-    theme = st.session_state.get("theme_override", "auto")
-    theme_icon = "☀️" if theme == "dark" else "🌙"
-    ultima_act = st.session_state.get("ultima_actualizacion", datetime.now())
-
-    # Navbar igual que el dashboard
-    st.markdown(
-        f"""
-        <div class="cs-nav">
-          <div class="cs-nav-left">
-            <div class="cs-nav-logo-ring">{_LOGO_SM}</div>
-            <div>
-              <div class="cs-nav-brand">COLSABOR</div>
-              <div class="cs-nav-tagline">Monitor de Inventario</div>
-            </div>
-          </div>
-          <div class="cs-nav-right">
-            <span class="cs-live-dot"></span>
-            <span class="cs-nav-ts" style="color:var(--amber);font-weight:700;font-size:10px;letter-spacing:.1em">CARGANDO</span>
-            <span class="cs-nav-ts" style="color:var(--border-subtle)">|</span>
-            <span class="cs-nav-ts">{ultima_act.strftime('%d %b %Y %H:%M')}</span>
-            <span class="cs-nav-user">{usuario_email.split('@')[0].upper()}</span>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    _, nc1, _, _ = st.columns([6, 1, 1, 1])
-    with nc1:
-        st.markdown('<div class="cs-btn-ghost">', unsafe_allow_html=True)
-        if st.button(theme_icon, help="Cambiar tema", use_container_width=True, key="_loading_theme"):  # pragma: no cover
-            st.session_state["theme_override"] = "light" if theme == "dark" else "dark"  # pragma: no cover
-            st.rerun()  # pragma: no cover
-        st.markdown("</div>", unsafe_allow_html=True)
+    saludo = get_greeting(usuario_email)
+    mensaje_random = get_random_message(usuario_email)
 
     st.html(f"""
 <style>
+/* ── Bloquear scroll de toda la app ─────────────────────── */
+html, body, [data-testid="stAppViewContainer"],
+[data-testid="stMain"], .main, .block-container {{
+  overflow: hidden !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
+}}
+
 @keyframes cs-spin {{
-  0% {{ transform: rotate(0deg); }}
+  0%   {{ transform: rotate(0deg); }}
   100% {{ transform: rotate(360deg); }}
 }}
-@keyframes cs-pulse-bar {{
-  0%,100% {{ opacity:.4; transform:scaleX(.6); }}
-  50% {{ opacity:1; transform:scaleX(1); }}
+@keyframes cs-bar-wave {{
+  0%,100% {{ height: 8px;  opacity: .35; }}
+  50%      {{ height: 28px; opacity: 1;   }}
 }}
-@keyframes cs-fade-up {{
-  from {{ opacity:0; transform:translateY(16px); }}
-  to {{ opacity:1; transform:translateY(0); }}
+@keyframes cs-fade-in {{
+  from {{ opacity: 0; transform: translateY(18px); }}
+  to   {{ opacity: 1; transform: translateY(0); }}
 }}
-.cs-loading-wrap {{
-  display:flex; flex-direction:column; align-items:center; justify-content:center;
-  min-height:60vh; gap:0; padding:40px 20px;
-  animation: cs-fade-up 0.5s cubic-bezier(0.16,1,0.3,1) both;
+@keyframes cs-orb {{
+  0%,100% {{ transform: translate(0,0) scale(1); }}
+  50%     {{ transform: translate(20px,-12px) scale(1.06); }}
 }}
-.cs-loading-ring {{
-  width:72px; height:72px; border-radius:50%;
-  border:3px solid rgba(59,130,246,0.12);
-  border-top:3px solid #3b82f6;
-  border-right:3px solid #22d3ee;
-  animation:cs-spin 1s linear infinite;
-  box-shadow:0 0 32px rgba(59,130,246,0.25);
-  margin-bottom:28px;
+
+/* ── Overlay fullscreen ──────────────────────────────────── */
+.cs-splash {{
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-main, #0d1117);
+  overflow: hidden;
+  animation: cs-fade-in .4s ease both;
 }}
-.cs-loading-msg {{
-  font-family:'Inter',sans-serif; font-size:15px; font-weight:600;
-  color:var(--text-primary); letter-spacing:-0.02em; margin-bottom:8px;
-  text-align:center;
+
+/* Orbs decorativos de fondo */
+.cs-splash-orb {{
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  pointer-events: none;
 }}
-.cs-loading-sub {{
-  font-family:'JetBrains Mono',monospace; font-size:11px;
-  color:var(--text-muted); letter-spacing:0.08em;
-  text-transform:uppercase; margin-bottom:32px; text-align:center;
+.cs-splash-orb-1 {{
+  width: 340px; height: 340px;
+  background: radial-gradient(circle, rgba(37,99,235,.18) 0%, transparent 70%);
+  top: -60px; left: -80px;
+  animation: cs-orb 7s ease-in-out infinite;
 }}
-.cs-loading-bars {{
-  display:flex; gap:5px; align-items:flex-end; height:28px;
+.cs-splash-orb-2 {{
+  width: 280px; height: 280px;
+  background: radial-gradient(circle, rgba(34,211,238,.14) 0%, transparent 70%);
+  bottom: -50px; right: -60px;
+  animation: cs-orb 9s ease-in-out infinite reverse;
 }}
-.cs-loading-bar {{
-  width:4px; border-radius:2px;
-  background:linear-gradient(180deg,#3b82f6,#22d3ee);
-  animation:cs-pulse-bar 1.2s ease-in-out infinite;
+
+/* Logo mini en la esquina */
+.cs-splash-logo {{
+  position: absolute;
+  top: 28px; left: 36px;
+  display: flex; align-items: center; gap: 12px;
 }}
-.cs-loading-bar:nth-child(1) {{ height:12px; animation-delay:0s; }}
-.cs-loading-bar:nth-child(2) {{ height:20px; animation-delay:.15s; }}
-.cs-loading-bar:nth-child(3) {{ height:28px; animation-delay:.3s; }}
-.cs-loading-bar:nth-child(4) {{ height:20px; animation-delay:.45s; }}
-.cs-loading-bar:nth-child(5) {{ height:12px; animation-delay:.6s; }}
+.cs-splash-brand {{
+  font-family: 'Inter', sans-serif;
+  font-size: 13px; font-weight: 800;
+  letter-spacing: .12em;
+  color: var(--text-primary, #e2e8f0);
+  opacity: .8;
+}}
+
+/* Contenido central */
+.cs-splash-body {{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  text-align: center;
+  padding: 0 32px;
+  max-width: 560px;
+  width: 100%;
+  animation: cs-fade-in .6s .1s ease both;
+}}
+
+/* Saludo */
+.cs-splash-greeting {{
+  font-family: 'Inter', sans-serif;
+  font-size: clamp(18px, 3vw, 26px);
+  font-weight: 700;
+  color: var(--text-primary, #e2e8f0);
+  letter-spacing: -.03em;
+  margin-bottom: 6px;
+}}
+
+/* Acción en progreso */
+.cs-splash-action {{
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--amber, #f59e0b);
+  margin-bottom: 36px;
+  opacity: .85;
+}}
+
+/* Anillo de carga */
+.cs-splash-ring {{
+  width: 76px; height: 76px;
+  border-radius: 50%;
+  border: 3px solid rgba(59,130,246,.12);
+  border-top:   3px solid #3b82f6;
+  border-right: 3px solid #22d3ee;
+  animation: cs-spin 1.1s linear infinite;
+  box-shadow: 0 0 36px rgba(59,130,246,.22);
+  margin-bottom: 32px;
+}}
+
+/* Mensaje random */
+.cs-splash-quote {{
+  font-family: 'Inter', sans-serif;
+  font-size: clamp(12px, 1.6vw, 14px);
+  color: var(--text-muted, #64748b);
+  line-height: 1.6;
+  max-width: 400px;
+  margin-bottom: 36px;
+  font-style: italic;
+}}
+
+/* Barras ecualizador */
+.cs-splash-bars {{
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+  height: 32px;
+}}
+.cs-splash-bar {{
+  width: 5px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #3b82f6, #22d3ee);
+  animation: cs-bar-wave 1.3s ease-in-out infinite;
+}}
+.cs-splash-bar:nth-child(1) {{ animation-delay: 0s;    height: 10px; }}
+.cs-splash-bar:nth-child(2) {{ animation-delay: .18s;  height: 18px; }}
+.cs-splash-bar:nth-child(3) {{ animation-delay: .36s;  height: 28px; }}
+.cs-splash-bar:nth-child(4) {{ animation-delay: .54s;  height: 18px; }}
+.cs-splash-bar:nth-child(5) {{ animation-delay: .72s;  height: 10px; }}
+
+/* Tag estado */
+.cs-splash-status {{
+  position: absolute;
+  bottom: 32px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: .1em;
+  color: var(--text-muted, #64748b);
+  text-transform: uppercase;
+  opacity: .6;
+}}
 </style>
-<div class="cs-loading-wrap">
-  <div class="cs-loading-ring"></div>
-  <div class="cs-loading-msg">{msg}</div>
-  <div class="cs-loading-sub">por favor espera</div>
-  <div class="cs-loading-bars">
-    <div class="cs-loading-bar"></div>
-    <div class="cs-loading-bar"></div>
-    <div class="cs-loading-bar"></div>
-    <div class="cs-loading-bar"></div>
-    <div class="cs-loading-bar"></div>
+
+<div class="cs-splash">
+  <!-- orbs de fondo -->
+  <div class="cs-splash-orb cs-splash-orb-1"></div>
+  <div class="cs-splash-orb cs-splash-orb-2"></div>
+
+  <!-- Logo esquina -->
+  <div class="cs-splash-logo">
+    <div class="cs-splash-brand">COLSABOR</div>
   </div>
+
+  <!-- Centro -->
+  <div class="cs-splash-body">
+    <div class="cs-splash-greeting">{saludo}</div>
+    <div class="cs-splash-action">{msg}</div>
+    <div class="cs-splash-ring"></div>
+    <div class="cs-splash-quote">"{mensaje_random}"</div>
+    <div class="cs-splash-bars">
+      <div class="cs-splash-bar"></div>
+      <div class="cs-splash-bar"></div>
+      <div class="cs-splash-bar"></div>
+      <div class="cs-splash-bar"></div>
+      <div class="cs-splash-bar"></div>
+    </div>
+  </div>
+
+  <!-- Pie de página -->
+  <div class="cs-splash-status">Monitor de Inventario · Colsabor S.A.S</div>
 </div>
 """)
 
@@ -1463,6 +1570,7 @@ letter-spacing:.12em">🔍 ESTADO CONEXIÓN SUPABASE</div>
 
     if needs_excel or needs_siigo:
         # Mostrar loading screen antes de las llamadas de red
+        _loading_start = time.time()
         _render_loading(
             "Descargando productos de Siigo…"
             if not needs_excel
@@ -1533,6 +1641,10 @@ letter-spacing:.12em">🔍 ESTADO CONEXIÓN SUPABASE</div>
         # Limpiar flag ANTES del rerun para que tests lo vean eliminado
         if "forzar_actualizacion" in st.session_state:
             del st.session_state["forzar_actualizacion"]
+        # Garantizar mínimo 5 segundos de pantalla de carga
+        _elapsed = time.time() - _loading_start
+        if _elapsed < 5.0:
+            time.sleep(5.0 - _elapsed)
         st.rerun()
     else:
         df_excel = st.session_state["df_excel_cache"]
