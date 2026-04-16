@@ -8,6 +8,7 @@ import pandas as pd
 import requests
 import plotly.graph_objects as go
 import base64
+import tomllib
 from datetime import datetime
 from pathlib import Path
 from supabase import create_client
@@ -23,8 +24,37 @@ SIIGO_ACCESS_KEY = "MmQzMDk0NjYtZjc3Ny00YzU0LWFmNDMtMjhiYzcxNGM5NTBhOnoyeTk5KE4u
 # ============================================================================
 # CONFIGURACIÓN DE SUPABASE
 # ============================================================================
+
+
+def _load_supabase_from_local_secrets() -> tuple[str, str]:
+    """Fallback de credenciales Supabase desde secrets.toml local."""
+    candidate_paths = [
+        Path.cwd() / ".streamlit" / "secrets.toml",
+        Path(__file__).resolve().parent / ".streamlit" / "secrets.toml",
+        Path(__file__).resolve().parents[1] / ".streamlit" / "secrets.toml",
+    ]
+    for secrets_path in candidate_paths:
+        if not secrets_path.exists():  # pragma: no cover
+            continue
+        try:
+            data = tomllib.loads(secrets_path.read_text(encoding="utf-8"))
+        except Exception:  # pragma: no cover
+            continue
+
+        url = str(data.get("SUPABASE_URL", "") or "").strip()
+        key = str(data.get("SUPABASE_KEY", "") or "").strip()
+        if url and key:
+            return url, key
+
+    return "", ""  # pragma: no cover
+
+
 SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
+if not SUPABASE_URL or not SUPABASE_KEY:
+    _fallback_url, _fallback_key = _load_supabase_from_local_secrets()
+    SUPABASE_URL = SUPABASE_URL or _fallback_url
+    SUPABASE_KEY = SUPABASE_KEY or _fallback_key
 
 # Nombres de las tablas en Supabase
 TABLE_INVENTARIO = "user_inventory"
@@ -831,10 +861,9 @@ def _load_logo_data_uri() -> str:
     for logo_path in candidate_paths:
         if logo_path.exists():
             try:
-                return (
-                    "data:image/png;base64,"
-                    + base64.b64encode(logo_path.read_bytes()).decode("ascii")
-                )
+                return "data:image/png;base64," + base64.b64encode(
+                    logo_path.read_bytes()
+                ).decode("ascii")
             except Exception:  # pragma: no cover
                 return ""
     return ""  # pragma: no cover
@@ -861,9 +890,9 @@ _LOGO_LG = (
     f'display:flex;justify-content:center;align-items:flex-start;margin:0 auto;">'
     f'<img src="{_LOGO_DATA_URI}" alt="Colsabor" '
     'style="width:300px;max-width:100%;height:auto;display:block;'
-    'transform:translateY(-58px);filter:brightness(1.38) contrast(1.18) '
+    "transform:translateY(-58px);filter:brightness(1.38) contrast(1.18) "
     'saturate(1.25) drop-shadow(0 10px 20px rgba(0,0,0,0.45));"/>'
-    '</div>'
+    "</div>"
     if _LOGO_DATA_URI
     else (
         '<svg width="120" height="48" viewBox="0 0 120 48" fill="none" xmlns="http://www.w3.org/2000/svg">'
@@ -1104,9 +1133,8 @@ def main():
                                     )
                                     if resp.session:
                                         st.session_state["usuario_email"] = (
-                                            (resp.user.email if resp.user else None)
-                                            or email_clean
-                                        )
+                                            resp.user.email if resp.user else None
+                                        ) or email_clean
                                         # Renueva token Siigo más adelante al cargar datos.
                                         if "token_siigo" in st.session_state:
                                             del st.session_state["token_siigo"]
