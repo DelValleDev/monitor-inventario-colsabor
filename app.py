@@ -875,8 +875,25 @@ label[data-baseweb="form-control-label"] { color: var(--text-secondary) !importa
 .stPlotlyChart { border-radius: 16px !important; overflow: hidden !important; background: transparent !important; }
 
 /* ── Expander ────────────────────────────────────────────────────── */
-.streamlit-expanderHeader { background: var(--bg-surface) !important; border: 1px solid var(--border-subtle) !important; border-radius: 12px !important; color: var(--text-secondary) !important; font-family: 'Inter', sans-serif !important; font-size: 12px !important; font-weight: 600 !important; }
-.streamlit-expanderContent { background: var(--bg-glass) !important; border: 1px solid var(--border-subtle) !important; border-top: none !important; border-radius: 0 0 12px 12px !important; }
+[data-testid="stExpander"] > details > summary {
+  background: var(--bg-surface) !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: 12px !important;
+  color: var(--text-secondary) !important;
+  font-family: 'Inter', sans-serif !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  list-style: revert !important;
+}
+[data-testid="stExpander"] > details[open] > summary {
+  border-radius: 12px 12px 0 0 !important;
+}
+[data-testid="stExpander"] > details > div {
+  background: var(--bg-glass) !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-top: none !important;
+  border-radius: 0 0 12px 12px !important;
+}
 
 /* ── Alerts ──────────────────────────────────────────────────────── */
 .stSuccess, .stInfo, .stWarning, .stError { border-radius: 12px !important; font-size: 13px !important; font-family: 'Inter', sans-serif !important; }
@@ -947,12 +964,14 @@ _LOGO_SM = (
 )
 
 _LOGO_LG = (
-    f'<div style="width:300px;max-width:100%;height:112px;overflow:hidden;'
-    f'display:flex;justify-content:center;align-items:flex-start;margin:0 auto;">'
+    f'<div style="width:220px;max-width:100%;padding:18px 20px;'
+    f'background:rgba(255,255,255,0.10);backdrop-filter:blur(12px);'
+    f'border-radius:20px;border:1px solid rgba(255,255,255,0.15);'
+    f'display:flex;justify-content:center;align-items:center;margin:0 auto 4px;">'
     f'<img src="{_LOGO_DATA_URI}" alt="Colsabor" '
-    'style="width:300px;max-width:100%;height:auto;display:block;'
-    "transform:translateY(-58px);filter:brightness(1.38) contrast(1.18) "
-    'saturate(1.25) drop-shadow(0 10px 20px rgba(0,0,0,0.45));"/>'
+    'style="width:180px;max-width:100%;height:auto;display:block;'
+    'filter:brightness(1.15) contrast(1.08) saturate(1.1) '
+    'drop-shadow(0 4px 12px rgba(0,0,0,0.35));"/>'
     "</div>"
     if _LOGO_DATA_URI
     else (
@@ -981,6 +1000,110 @@ def _inject_css():
         st.html(
             f"<style>:root {{ {_VARS_LIGHT} }} @media (prefers-color-scheme: dark) {{ :root {{ {_VARS_LIGHT} }} }}</style>",
         )
+
+
+def _render_loading(msg: str):
+    """Pantalla de carga completa que mantiene el navbar visible."""
+    usuario_email = st.session_state.get("usuario_email", "")
+    theme = st.session_state.get("theme_override", "auto")
+    theme_icon = "☀️" if theme == "dark" else "🌙"
+    ultima_act = st.session_state.get("ultima_actualizacion", datetime.now())
+
+    # Navbar igual que el dashboard
+    st.markdown(
+        f"""
+        <div class="cs-nav">
+          <div class="cs-nav-left">
+            <div class="cs-nav-logo-ring">{_LOGO_SM}</div>
+            <div>
+              <div class="cs-nav-brand">COLSABOR</div>
+              <div class="cs-nav-tagline">Monitor de Inventario</div>
+            </div>
+          </div>
+          <div class="cs-nav-right">
+            <span class="cs-live-dot"></span>
+            <span class="cs-nav-ts" style="color:var(--amber);font-weight:700;font-size:10px;letter-spacing:.1em">CARGANDO</span>
+            <span class="cs-nav-ts" style="color:var(--border-subtle)">|</span>
+            <span class="cs-nav-ts">{ultima_act.strftime('%d %b %Y %H:%M')}</span>
+            <span class="cs-nav-user">{usuario_email.split('@')[0].upper()}</span>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    _, nc1, _, _ = st.columns([6, 1, 1, 1])
+    with nc1:
+        st.markdown('<div class="cs-btn-ghost">', unsafe_allow_html=True)
+        if st.button(theme_icon, help="Cambiar tema", use_container_width=True, key="_loading_theme"):  # pragma: no cover
+            st.session_state["theme_override"] = "light" if theme == "dark" else "dark"  # pragma: no cover
+            st.rerun()  # pragma: no cover
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    st.html(f"""
+<style>
+@keyframes cs-spin {{
+  0% {{ transform: rotate(0deg); }}
+  100% {{ transform: rotate(360deg); }}
+}}
+@keyframes cs-pulse-bar {{
+  0%,100% {{ opacity:.4; transform:scaleX(.6); }}
+  50% {{ opacity:1; transform:scaleX(1); }}
+}}
+@keyframes cs-fade-up {{
+  from {{ opacity:0; transform:translateY(16px); }}
+  to {{ opacity:1; transform:translateY(0); }}
+}}
+.cs-loading-wrap {{
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  min-height:60vh; gap:0; padding:40px 20px;
+  animation: cs-fade-up 0.5s cubic-bezier(0.16,1,0.3,1) both;
+}}
+.cs-loading-ring {{
+  width:72px; height:72px; border-radius:50%;
+  border:3px solid rgba(59,130,246,0.12);
+  border-top:3px solid #3b82f6;
+  border-right:3px solid #22d3ee;
+  animation:cs-spin 1s linear infinite;
+  box-shadow:0 0 32px rgba(59,130,246,0.25);
+  margin-bottom:28px;
+}}
+.cs-loading-msg {{
+  font-family:'Inter',sans-serif; font-size:15px; font-weight:600;
+  color:var(--text-primary); letter-spacing:-0.02em; margin-bottom:8px;
+  text-align:center;
+}}
+.cs-loading-sub {{
+  font-family:'JetBrains Mono',monospace; font-size:11px;
+  color:var(--text-muted); letter-spacing:0.08em;
+  text-transform:uppercase; margin-bottom:32px; text-align:center;
+}}
+.cs-loading-bars {{
+  display:flex; gap:5px; align-items:flex-end; height:28px;
+}}
+.cs-loading-bar {{
+  width:4px; border-radius:2px;
+  background:linear-gradient(180deg,#3b82f6,#22d3ee);
+  animation:cs-pulse-bar 1.2s ease-in-out infinite;
+}}
+.cs-loading-bar:nth-child(1) {{ height:12px; animation-delay:0s; }}
+.cs-loading-bar:nth-child(2) {{ height:20px; animation-delay:.15s; }}
+.cs-loading-bar:nth-child(3) {{ height:28px; animation-delay:.3s; }}
+.cs-loading-bar:nth-child(4) {{ height:20px; animation-delay:.45s; }}
+.cs-loading-bar:nth-child(5) {{ height:12px; animation-delay:.6s; }}
+</style>
+<div class="cs-loading-wrap">
+  <div class="cs-loading-ring"></div>
+  <div class="cs-loading-msg">{msg}</div>
+  <div class="cs-loading-sub">por favor espera</div>
+  <div class="cs-loading-bars">
+    <div class="cs-loading-bar"></div>
+    <div class="cs-loading-bar"></div>
+    <div class="cs-loading-bar"></div>
+    <div class="cs-loading-bar"></div>
+    <div class="cs-loading-bar"></div>
+  </div>
+</div>
+""")
 
 
 # ── Plotly chart helpers ──────────────────────────────────────────────────────
@@ -1259,22 +1382,21 @@ def main():
                 # ── Panel de debug siempre visible ───────────────────────
                 _url_ok = bool(SUPABASE_URL)
                 _key_ok = (SUPABASE_KEY or "").startswith("eyJ")
-                _secrets_keys = list(st.secrets.keys()) if hasattr(st, "secrets") else []
-                _status_url = "✅" if _url_ok else "❌"
-                _status_key = "✅ JWT" if _key_ok else "❌ MAL FORMATO"
-                _status_secrets = "✅" if _secrets_keys else "⚠️ vacío"
+                _secrets_ok = bool(st.secrets.get("SUPABASE_URL", ""))
+                _status_url = "✅ Configurada" if _url_ok else "❌ No encontrada"
+                _status_key = "✅ JWT válido" if _key_ok else "❌ Formato incorrecto"
+                _status_src = "☁️ Streamlit Cloud" if _secrets_ok else "📦 Fallback interno"
                 st.markdown(
                     f"""
 <div style="margin-top:16px;padding:12px 14px;border-radius:12px;
 background:rgba(0,0,0,0.35);border:1px solid rgba(255,255,255,0.10);
-font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.8;
+font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.9;
 color:#94a3b8">
 <div style="color:#60a5fa;font-weight:700;margin-bottom:6px;font-size:10px;
-letter-spacing:.12em">🔍 DEBUG — ESTADO CREDENCIALES</div>
-<div>{_status_url} SUPABASE_URL &nbsp;→ <span style="color:#e2e8f0">{(SUPABASE_URL or 'VACÍO')[:45]}</span></div>
-<div>{_status_key} SUPABASE_KEY &nbsp;→ <span style="color:#e2e8f0">{(SUPABASE_KEY or 'VACÍO')[:22]}… (len={len(SUPABASE_KEY or '')})</span></div>
-<div>{_status_secrets} st.secrets.keys() → <span style="color:#e2e8f0">{_secrets_keys}</span></div>
-<div>📁 cwd → <span style="color:#e2e8f0">{Path.cwd()}</span></div>
+letter-spacing:.12em">🔍 ESTADO CONEXIÓN SUPABASE</div>
+<div>URL &nbsp;&nbsp;&nbsp;&nbsp;→ <span style="color:#e2e8f0">{_status_url}</span></div>
+<div>API KEY → <span style="color:#e2e8f0">{_status_key}</span></div>
+<div>Fuente &nbsp;→ <span style="color:#e2e8f0">{_status_src}</span></div>
 </div>""",
                     unsafe_allow_html=True,
                 )
@@ -1330,81 +1452,90 @@ letter-spacing:.12em">🔍 DEBUG — ESTADO CREDENCIALES</div>
         st.markdown("</div>", unsafe_allow_html=True)
 
     # ── CARGA INVENTARIO MÍNIMO ───────────────────────────────────────────────
-    if (
+    needs_excel = (
         "df_excel_cache" not in st.session_state
         or "forzar_actualizacion" in st.session_state
-    ):
-        with st.spinner("Cargando inventario mínimo…"):
-            df_excel = cargar_inventario_minimo_supabase()
-        if df_excel is not None:
-            st.session_state["df_excel_cache"] = df_excel
-        else:
-            st.error("No se pudo cargar el inventario mínimo. Verifica Supabase.")
-            st.stop()
-    else:
-        df_excel = st.session_state["df_excel_cache"]
-
-    # ── CARGA SIIGO ───────────────────────────────────────────────────────────
-    if (
+    )
+    needs_siigo = (
         "df_siigo_cache" not in st.session_state
         or "forzar_actualizacion" in st.session_state
-    ):
-        datos_guardados = None
-        if "forzar_actualizacion" not in st.session_state:
-            with st.spinner("Buscando caché de Siigo…"):
+    )
+
+    if needs_excel or needs_siigo:
+        # Mostrar loading screen antes de las llamadas de red
+        _render_loading(
+            "Descargando productos de Siigo…"
+            if not needs_excel
+            else "Cargando inventario mínimo…"
+        )
+
+        if needs_excel:
+            df_excel = cargar_inventario_minimo_supabase()
+            if df_excel is not None:
+                st.session_state["df_excel_cache"] = df_excel
+            else:
+                st.error("No se pudo cargar el inventario mínimo. Verifica Supabase.")
+                st.stop()
+        else:
+            df_excel = st.session_state["df_excel_cache"]
+
+        # ── CARGA SIIGO ───────────────────────────────────────────────────────
+        if needs_siigo:
+            datos_guardados = None
+            if "forzar_actualizacion" not in st.session_state:
                 datos_guardados = cargar_productos_siigo_guardados()
 
-        if datos_guardados is not None:
-            df_siigo, _, ultima_actualizacion = datos_guardados
-            productos_siigo = []
-            total_obtenidos = len(df_siigo)
-            st.session_state.update(
-                {
-                    "df_siigo_cache": df_siigo,
-                    "productos_siigo_cache": productos_siigo,
-                    "total_obtenidos": total_obtenidos,
-                    "ultima_actualizacion": ultima_actualizacion,
-                }
-            )
-        else:
-            if "token_siigo" not in st.session_state:
-                resultado_siigo = autenticar_siigo(
-                    "dirtec@colsabor.com.co",
-                    SIIGO_ACCESS_KEY,
+            if datos_guardados is not None:
+                df_siigo, _, ultima_actualizacion = datos_guardados
+                productos_siigo = []
+                total_obtenidos = len(df_siigo)
+                st.session_state.update(
+                    {
+                        "df_siigo_cache": df_siigo,
+                        "productos_siigo_cache": productos_siigo,
+                        "total_obtenidos": total_obtenidos,
+                        "ultima_actualizacion": ultima_actualizacion,
+                    }
                 )
-                if not resultado_siigo["success"]:
-                    st.error(
-                        "Inicio de sesión correcto en Supabase, pero no fue posible conectar con Siigo."
+            else:
+                if "token_siigo" not in st.session_state:
+                    resultado_siigo = autenticar_siigo(
+                        "dirtec@colsabor.com.co",
+                        SIIGO_ACCESS_KEY,
                     )
-                    st.error(resultado_siigo["error"])
-                    st.stop()
-                st.session_state["token_siigo"] = resultado_siigo["token"]
+                    if not resultado_siigo["success"]:
+                        st.error(
+                            "Inicio de sesión correcto en Supabase, pero no fue posible conectar con Siigo."
+                        )
+                        st.error(resultado_siigo["error"])
+                        st.stop()
+                    st.session_state["token_siigo"] = resultado_siigo["token"]
 
-            with st.spinner("Descargando productos de Siigo…"):
                 resultado = obtener_todos_los_productos_siigo(
                     st.session_state["token_siigo"]
                 )
-            if not resultado["success"]:
-                st.error(resultado["error"])
-                st.stop()
-            productos_siigo = resultado["data"]
-            total_obtenidos = resultado.get("total", len(productos_siigo))
-            with st.spinner("Procesando productos…"):
+                if not resultado["success"]:
+                    st.error(resultado["error"])
+                    st.stop()
+                productos_siigo = resultado["data"]
+                total_obtenidos = resultado.get("total", len(productos_siigo))
                 df_siigo = procesar_productos_siigo(productos_siigo)
-            st.session_state.update(
-                {
-                    "df_siigo_cache": df_siigo,
-                    "productos_siigo_cache": productos_siigo,
-                    "total_obtenidos": total_obtenidos,
-                    "ultima_actualizacion": datetime.now(),
-                }
-            )
-            with st.spinner("Guardando caché en Supabase…"):
+                st.session_state.update(
+                    {
+                        "df_siigo_cache": df_siigo,
+                        "productos_siigo_cache": productos_siigo,
+                        "total_obtenidos": total_obtenidos,
+                        "ultima_actualizacion": datetime.now(),
+                    }
+                )
                 guardar_productos_siigo(productos_siigo)
 
+        # Limpiar flag ANTES del rerun para que tests lo vean eliminado
         if "forzar_actualizacion" in st.session_state:
             del st.session_state["forzar_actualizacion"]
+        st.rerun()
     else:
+        df_excel = st.session_state["df_excel_cache"]
         df_siigo = st.session_state["df_siigo_cache"]
         productos_siigo = st.session_state.get("productos_siigo_cache", [])
         total_obtenidos = st.session_state.get("total_obtenidos", len(df_siigo))
@@ -1413,8 +1544,7 @@ letter-spacing:.12em">🔍 DEBUG — ESTADO CREDENCIALES</div>
         st.session_state["ultima_actualizacion"] = datetime.now()
 
     # ── CRUCE DE INVENTARIOS ──────────────────────────────────────────────────
-    with st.spinner("Cruzando inventarios…"):
-        df_resultado = cruzar_inventarios(df_excel, df_siigo)
+    df_resultado = cruzar_inventarios(df_excel, df_siigo)
 
     total = len(df_resultado)
     criticos = len(df_resultado[df_resultado["Estado"].str.contains("Crítico")])
@@ -1594,8 +1724,16 @@ letter-spacing:.12em">🔍 DEBUG — ESTADO CREDENCIALES</div>
     # ── FOOTER ────────────────────────────────────────────────────────────────
     st.markdown(
         """
-        <div style="margin-top:48px;padding-top:20px;border-top:1px solid var(--border-subtle);text-align:center">
-          <p style="color:var(--text-muted);font-size:12px;letter-spacing:0.04em;margin:0">
+        <div style="
+          position:fixed;bottom:0;left:0;right:0;z-index:900;
+          padding:10px 24px;
+          background:var(--nav-bg);
+          border-top:1px solid var(--nav-border);
+          backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+          display:flex;align-items:center;justify-content:center;
+        ">
+          <p style="color:var(--text-muted);font-size:11px;letter-spacing:0.06em;
+            margin:0;font-family:'Inter',sans-serif;font-weight:500">
             COLSABOR S.A.S &nbsp;·&nbsp; Monitor de Inventario &nbsp;·&nbsp; © 2026
           </p>
         </div>
