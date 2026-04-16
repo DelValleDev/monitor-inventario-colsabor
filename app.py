@@ -15,7 +15,10 @@ import tomllib
 from datetime import datetime
 from pathlib import Path
 from supabase import create_client
-from inventory_monitor.loading_messages import get_greeting, get_random_message
+try:
+    from inventory_monitor.loading_messages import get_greeting, get_random_message
+except ModuleNotFoundError:  # pragma: no cover
+    from loading_messages import get_greeting, get_random_message  # type: ignore[no-redef]  # pragma: no cover
 
 # ── Debug logger (imprime en consola/terminal donde corre Streamlit) ──────────
 logging.basicConfig(
