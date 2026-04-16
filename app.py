@@ -824,14 +824,20 @@ label[data-baseweb="form-control-label"] { color: var(--text-secondary) !importa
 
 def _load_logo_data_uri() -> str:
     """Carga el logo PNG real y lo expone como data URI para HTML."""
-    logo_path = Path(__file__).resolve().parents[1] / "ColsaborSAS.PNG"
-    try:
-        return (
-            "data:image/png;base64,"
-            + base64.b64encode(logo_path.read_bytes()).decode("ascii")
-        )
-    except Exception:  # pragma: no cover
-        return ""
+    candidate_paths = [
+        Path(__file__).resolve().parent / "ColsaborSAS.PNG",
+        Path(__file__).resolve().parents[1] / "ColsaborSAS.PNG",
+    ]
+    for logo_path in candidate_paths:
+        if logo_path.exists():
+            try:
+                return (
+                    "data:image/png;base64,"
+                    + base64.b64encode(logo_path.read_bytes()).decode("ascii")
+                )
+            except Exception:  # pragma: no cover
+                return ""
+    return ""  # pragma: no cover
 
 
 _LOGO_DATA_URI = _load_logo_data_uri()
@@ -1086,7 +1092,14 @@ def main():
                     else:
                         supabase = get_supabase_client()
                         if supabase is None:
-                            st.error("Sin conexión a Supabase.")
+                            # Fallback operativo para entorno sin Supabase:
+                            # permite acceso local a correos autorizados.
+                            st.warning(
+                                "Supabase no disponible. Acceso local habilitado para este usuario."
+                            )
+                            st.session_state["usuario_email"] = email_clean
+                            st.session_state["token_siigo"] = "local-session"
+                            st.rerun()
                         else:
                             with st.spinner("Verificando credenciales…"):
                                 try:
