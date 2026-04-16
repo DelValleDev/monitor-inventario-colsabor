@@ -1160,21 +1160,35 @@ def main():
                 ):
                     email_clean = usuario_email.strip().lower()
                     _log.debug("[LOGIN] intento -> email=%s pass_len=%d", email_clean, len(usuario_password))
+                    # Reiniciar log de UI
+                    st.session_state["_dbg_log"] = []
+
+                    def _dbg(msg: str):
+                        st.session_state.setdefault("_dbg_log", []).append(msg)
+                        _log.debug("[LOGIN-UI] %s", msg)
+
                     if not email_clean or not usuario_password:
+                        _dbg("⚠️ Correo o contraseña vacíos")
                         st.warning("Completa tu correo y contraseña.")
                     elif email_clean not in ALLOWED_EMAILS:
+                        _dbg(f"❌ Email no autorizado: {email_clean}")
                         _log.debug("[LOGIN] email no autorizado: %s", email_clean)
                         st.error("Acceso denegado. Este correo no está autorizado.")
                     else:
+                        _dbg(f"✅ Email autorizado: {email_clean}")
                         _log.debug("[LOGIN] email autorizado, obteniendo cliente Supabase...")
+                        _dbg(f"🔑 URL={SUPABASE_URL[:30] if SUPABASE_URL else 'VACÍO'} KEY_len={len(SUPABASE_KEY or '')}")
                         supabase = get_supabase_client()
                         if supabase is None:
+                            _dbg("❌ get_supabase_client() devolvió None")
                             _log.debug("[LOGIN] supabase client es None -> fallo")
                             st.error("Sin conexión a Supabase.")
                         else:
+                            _dbg("✅ Cliente Supabase creado OK")
                             _log.debug("[LOGIN] cliente OK, llamando sign_in_with_password...")
                             with st.spinner("Verificando credenciales…"):
                                 try:
+                                    _dbg("⏳ Llamando sign_in_with_password...")
                                     resp = supabase.auth.sign_in_with_password(
                                         {
                                             "email": email_clean,
@@ -1187,6 +1201,7 @@ def main():
                                         resp.user.email if resp.user else None,
                                     )
                                     if resp.session:
+                                        _dbg("✅ LOGIN EXITOSO — redirigiendo...")
                                         st.session_state["usuario_email"] = (
                                             resp.user.email if resp.user else None
                                         ) or email_clean
@@ -1196,10 +1211,12 @@ def main():
                                         _log.debug("[LOGIN] LOGIN EXITOSO para %s", email_clean)
                                         st.rerun()
                                     else:
+                                        _dbg("❌ Respuesta sin session")
                                         _log.debug("[LOGIN] sin session en la respuesta")
                                         st.error("Credenciales incorrectas.")
                                 except Exception as e:
                                     msg = str(e)
+                                    _dbg(f"💥 Excepción: {msg}")
                                     _log.debug("[LOGIN] excepcion en sign_in: %s", msg)
                                     if "Invalid login credentials" in msg:
                                         st.error("Correo o contraseña incorrectos.")
@@ -1210,16 +1227,41 @@ def main():
                                     else:
                                         st.error(f"Error: {msg}")
 
-                # Panel de debug (visible en pantalla para facilitar diagnóstico)
-                with st.expander("🔍 Debug — estado de credenciales"):
-                    st.code(
-                        f"SUPABASE_URL  : {(SUPABASE_URL or 'VACIO')[:50]}\n"
-                        f"SUPABASE_KEY  : {(SUPABASE_KEY or 'VACIO')[:25]}... (len={len(SUPABASE_KEY or '')})\n"
-                        f"KEY formato   : {'JWT (eyJ...)' if (SUPABASE_KEY or '').startswith('eyJ') else 'OTRO - INCORRECTO'}\n"
-                        f"st.secrets keys: {list(st.secrets.keys()) if hasattr(st, 'secrets') else 'N/A'}\n"
-                        f"cwd           : {Path.cwd()}",
-                        language="text",
+                # Mostrar log de último intento de login
+                if st.session_state.get("_dbg_log"):
+                    lines = "\n".join(st.session_state["_dbg_log"])
+                    st.markdown(
+                        f'<div style="margin-top:10px;padding:10px 14px;border-radius:10px;'
+                        f'background:rgba(0,0,0,0.40);border:1px solid rgba(99,102,241,0.25);'
+                        f'font-family:JetBrains Mono,monospace;font-size:11px;line-height:1.8;'
+                        f'color:#c4b5fd;white-space:pre-wrap">'
+                        f'<span style="color:#818cf8;font-size:9px;letter-spacing:.1em;font-weight:700">ÚLTIMO INTENTO</span>\n'
+                        f"{lines}</div>",
+                        unsafe_allow_html=True,
                     )
+
+                # ── Panel de debug siempre visible ───────────────────────
+                _url_ok = bool(SUPABASE_URL)
+                _key_ok = (SUPABASE_KEY or "").startswith("eyJ")
+                _secrets_keys = list(st.secrets.keys()) if hasattr(st, "secrets") else []
+                _status_url = "✅" if _url_ok else "❌"
+                _status_key = "✅ JWT" if _key_ok else "❌ MAL FORMATO"
+                _status_secrets = "✅" if _secrets_keys else "⚠️ vacío"
+                st.markdown(
+                    f"""
+<div style="margin-top:16px;padding:12px 14px;border-radius:12px;
+background:rgba(0,0,0,0.35);border:1px solid rgba(255,255,255,0.10);
+font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.8;
+color:#94a3b8">
+<div style="color:#60a5fa;font-weight:700;margin-bottom:6px;font-size:10px;
+letter-spacing:.12em">🔍 DEBUG — ESTADO CREDENCIALES</div>
+<div>{_status_url} SUPABASE_URL &nbsp;→ <span style="color:#e2e8f0">{(SUPABASE_URL or 'VACÍO')[:45]}</span></div>
+<div>{_status_key} SUPABASE_KEY &nbsp;→ <span style="color:#e2e8f0">{(SUPABASE_KEY or 'VACÍO')[:22]}… (len={len(SUPABASE_KEY or '')})</span></div>
+<div>{_status_secrets} st.secrets.keys() → <span style="color:#e2e8f0">{_secrets_keys}</span></div>
+<div>📁 cwd → <span style="color:#e2e8f0">{Path.cwd()}</span></div>
+</div>""",
+                    unsafe_allow_html=True,
+                )
         st.stop()
 
     # ── NAVBAR ───────────────────────────────────────────────────────────────
