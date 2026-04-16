@@ -977,105 +977,117 @@ def main():
 </style>"""
             )
 
-        # Card HTML (parte superior visual): flex-centrado en pantalla completa
-        st.markdown(
-            f"""
-            <div class="cs-login-wrap">
-              <div class="cs-login-card">
-                <div style="display:flex;justify-content:center;margin-bottom:20px">
-                  {_LOGO_LG}
-                </div>
-                <div class="cs-login-subtitle">Sistema de Inventario</div>
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        # Hack de margen negativo: sube la columna de widgets para que se solape
-        # visualmente con la parte inferior del card HTML de arriba.
+        # CSS del login: centrado vertical via flex, card sobre st.container y
+        # toggle fijo arriba-derecha. st.html() evita que Streamlit elimine
+        # los <style> tags (a diferencia de st.markdown()).
         _, col, _ = st.columns([1, 1.1, 1])
         with col:
-            st.markdown(
+            st.html(
                 "<style>"
                 "html,body{overflow:hidden!important}"
-                ".cs-login-wrap{margin-bottom:-310px}"
-                ".st-key-login_theme{position:fixed;top:16px;left:16px;"
-                "z-index:1100;width:auto!important}"
+                ".block-container{display:flex!important;align-items:center"
+                "!important;min-height:100vh!important;padding:0 1.5rem"
+                "!important;max-width:100%!important;margin:0!important}"
+                ".block-container>div[data-testid='stVerticalBlock']"
+                "{width:100%}"
+                ".st-key-login_card{background:var(--bg-surface)!important;"
+                "backdrop-filter:blur(40px) saturate(200%);"
+                "-webkit-backdrop-filter:blur(40px) saturate(200%);"
+                "border:1px solid var(--border-subtle)!important;"
+                "border-radius:24px!important;"
+                "padding:40px 36px 36px!important;"
+                "box-shadow:var(--shadow-lg),var(--shadow-glow)!important;"
+                "position:relative!important;"
+                "animation:cs-scale-in 0.55s cubic-bezier(0.16,1,0.3,1) both}"
+                ".st-key-login_theme{position:fixed!important;top:16px"
+                "!important;right:16px!important;z-index:1100!important;"
+                "width:auto!important}"
                 ".st-key-login_theme button{width:44px!important;"
                 "min-width:44px!important;height:44px!important;"
                 "border-radius:999px!important;padding:0!important;"
                 "font-size:20px!important}"
-                "</style>",
-                unsafe_allow_html=True,
+                "</style>"
             )
-            st.markdown('<div class="cs-btn-ghost">', unsafe_allow_html=True)
-            if st.button(_theme_icon, help="Cambiar tema", key="login_theme"):
-                st.session_state["theme_override"] = (
-                    "light" if _theme == "dark" else "dark"
+            with st.container(key="login_card"):
+                st.markdown(
+                    f'<div style="display:flex;justify-content:center;'
+                    f'margin-bottom:20px">{_LOGO_LG}</div>'
+                    f'<div class="cs-login-subtitle">Sistema de Inventario'
+                    f"</div>",
+                    unsafe_allow_html=True,
                 )
-                st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
-            st.markdown(
-                '<div style="text-align:center;margin-bottom:20px">'
-                '<span class="cs-badge">🔒 Acceso Restringido</span></div>',
-                unsafe_allow_html=True,
-            )
-            usuario_email = st.text_input(
-                "Correo corporativo",
-                placeholder="nombre@colsabor.com.co",
-                key="email_input",
-            )
-            usuario_password = st.text_input(
-                "Contraseña",
-                type="password",
-                placeholder="••••••••",
-                key="password_input",
-            )
-            st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-            if st.button("Iniciar Sesión →", use_container_width=True, type="primary"):
-                email_clean = usuario_email.strip().lower()
-                if not email_clean or not usuario_password:
-                    st.warning("Completa tu correo y contraseña.")
-                elif email_clean not in ALLOWED_EMAILS:
-                    st.error("Acceso denegado. Este correo no está autorizado.")
-                else:
-                    supabase = get_supabase_client()
-                    if supabase is None:
-                        st.error("Sin conexión a Supabase.")
+                st.markdown('<div class="cs-btn-ghost">', unsafe_allow_html=True)
+                if st.button(_theme_icon, help="Cambiar tema", key="login_theme"):
+                    st.session_state["theme_override"] = (
+                        "light" if _theme == "dark" else "dark"
+                    )
+                    st.rerun()
+                st.markdown("</div>", unsafe_allow_html=True)
+                st.markdown(
+                    '<div style="text-align:center;margin-bottom:20px">'
+                    '<span class="cs-badge">🔒 Acceso Restringido</span></div>',
+                    unsafe_allow_html=True,
+                )
+                usuario_email = st.text_input(
+                    "Correo corporativo",
+                    placeholder="nombre@colsabor.com.co",
+                    key="email_input",
+                )
+                usuario_password = st.text_input(
+                    "Contraseña",
+                    type="password",
+                    placeholder="••••••••",
+                    key="password_input",
+                )
+                st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+                if st.button(
+                    "Iniciar Sesión →", use_container_width=True, type="primary"
+                ):
+                    email_clean = usuario_email.strip().lower()
+                    if not email_clean or not usuario_password:
+                        st.warning("Completa tu correo y contraseña.")
+                    elif email_clean not in ALLOWED_EMAILS:
+                        st.error("Acceso denegado. Este correo no está autorizado.")
                     else:
-                        with st.spinner("Verificando credenciales…"):
-                            try:
-                                resp = supabase.auth.sign_in_with_password(
-                                    {
-                                        "email": email_clean,
-                                        "password": usuario_password,
-                                    }
-                                )
-                                if resp.session:
-                                    resultado_siigo = autenticar_siigo(
-                                        "dirtec@colsabor.com.co", SIIGO_ACCESS_KEY
+                        supabase = get_supabase_client()
+                        if supabase is None:
+                            st.error("Sin conexión a Supabase.")
+                        else:
+                            with st.spinner("Verificando credenciales…"):
+                                try:
+                                    resp = supabase.auth.sign_in_with_password(
+                                        {
+                                            "email": email_clean,
+                                            "password": usuario_password,
+                                        }
                                     )
-                                    if resultado_siigo["success"]:
-                                        st.session_state["token_siigo"] = (
-                                            resultado_siigo["token"]
+                                    if resp.session:
+                                        resultado_siigo = autenticar_siigo(
+                                            "dirtec@colsabor.com.co",
+                                            SIIGO_ACCESS_KEY,
                                         )
-                                        st.session_state["usuario_email"] = (
-                                            resp.user.email
-                                        )
-                                        st.rerun()
+                                        if resultado_siigo["success"]:
+                                            st.session_state["token_siigo"] = (
+                                                resultado_siigo["token"]
+                                            )
+                                            st.session_state["usuario_email"] = (
+                                                resp.user.email
+                                            )
+                                            st.rerun()
+                                        else:
+                                            st.error("Error al conectar con Siigo.")
                                     else:
-                                        st.error("Error al conectar con Siigo.")
-                                else:
-                                    st.error("Credenciales incorrectas.")
-                            except Exception as e:
-                                msg = str(e)
-                                if "Invalid login credentials" in msg:
-                                    st.error("Correo o contraseña incorrectos.")
-                                elif "Email not confirmed" in msg:
-                                    st.warning("Confirma tu correo antes de entrar.")
-                                else:
-                                    st.error(f"Error: {msg}")
+                                        st.error("Credenciales incorrectas.")
+                                except Exception as e:
+                                    msg = str(e)
+                                    if "Invalid login credentials" in msg:
+                                        st.error("Correo o contraseña incorrectos.")
+                                    elif "Email not confirmed" in msg:
+                                        st.warning(
+                                            "Confirma tu correo antes de entrar."
+                                        )
+                                    else:
+                                        st.error(f"Error: {msg}")
         st.stop()
 
     # ── NAVBAR ───────────────────────────────────────────────────────────────
