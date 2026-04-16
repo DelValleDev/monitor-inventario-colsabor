@@ -737,11 +737,11 @@ html, body, [class*="st-"], .stApp {
 .cs-panel { background: var(--bg-surface); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid var(--border-subtle); border-radius: 20px; padding: 20px 24px; box-shadow: var(--shadow-sm); margin-bottom: 20px; animation: cs-rise 0.5s cubic-bezier(0.16,1,0.3,1) 0.2s both; }
 
 /* ── Login ───────────────────────────────────────────────────────── */
-.cs-login-wrap { padding: max(24px, calc(50vh - 200px)) 20px 0; display: flex; justify-content: center; }
+.cs-login-wrap { padding: max(20px, calc(50vh - 240px)) 20px 0; display: flex; justify-content: center; }
 .cs-login-card {
-  width: 100%; max-width: 395px; position: relative; overflow: hidden;
+  width: 100%; max-width: 395px; position: relative;
   background: var(--bg-surface); backdrop-filter: blur(40px) saturate(200%); -webkit-backdrop-filter: blur(40px) saturate(200%);
-  border: 1px solid var(--border-subtle); border-radius: 24px; padding: 44px 36px 36px;
+  border: 1px solid var(--border-subtle); border-radius: 24px; padding: 44px 36px 300px;
   box-shadow: var(--shadow-lg), var(--shadow-glow);
   animation: cs-scale-in 0.55s cubic-bezier(0.16,1,0.3,1) both;
 }
@@ -998,7 +998,8 @@ def main():
         with col:
             st.markdown(
                 "<style>"
-                ".cs-login-wrap{margin-bottom:-30px}"
+                "html,body{overflow:hidden!important}"
+                ".cs-login-wrap{margin-bottom:-310px}"
                 ".st-key-login_theme{position:fixed;top:16px;left:16px;"
                 "z-index:1100;width:auto!important}"
                 ".st-key-login_theme button{width:44px!important;"
