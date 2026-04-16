@@ -3,6 +3,8 @@ Monitor de Inventario Inteligente - Colsabor
 Aplicación Streamlit para monitorear inventario conectado a Siigo API
 """
 
+import logging
+import sys
 import streamlit as st
 import pandas as pd
 import requests
@@ -12,6 +14,16 @@ import tomllib
 from datetime import datetime
 from pathlib import Path
 from supabase import create_client
+
+# ── Debug logger (imprime en consola/terminal donde corre Streamlit) ──────────
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="[CS-DEBUG %(asctime)s] %(message)s",
+    datefmt="%H:%M:%S",
+    stream=sys.stdout,
+    force=True,
+)
+_log = logging.getLogger("colsabor")
 
 # ============================================================================
 # CONFIGURACIÓN DE CREDENCIALES SIIGO API
@@ -33,28 +45,51 @@ def _load_supabase_from_local_secrets() -> tuple[str, str]:
         Path(__file__).resolve().parent / ".streamlit" / "secrets.toml",
         Path(__file__).resolve().parents[1] / ".streamlit" / "secrets.toml",
     ]
+    _log.debug("[SECRETS-FALLBACK] cwd=%s", Path.cwd())
     for secrets_path in candidate_paths:
+        _log.debug("[SECRETS-FALLBACK] probando: %s  existe=%s", secrets_path, secrets_path.exists())
         if not secrets_path.exists():  # pragma: no cover
             continue
         try:
             data = tomllib.loads(secrets_path.read_text(encoding="utf-8"))
-        except Exception:  # pragma: no cover
+        except Exception as exc:  # pragma: no cover
+            _log.debug("[SECRETS-FALLBACK] error leyendo %s: %s", secrets_path, exc)
             continue
 
         url = str(data.get("SUPABASE_URL", "") or "").strip()
         key = str(data.get("SUPABASE_KEY", "") or "").strip()
+        _log.debug(
+            "[SECRETS-FALLBACK] leido -> URL=%s KEY_prefix=%s",
+            url[:30] if url else "VACIO",
+            key[:20] if key else "VACIO",
+        )
         if url and key:
             return url, key
 
+    _log.debug("[SECRETS-FALLBACK] no se encontraron credenciales en ninguna ruta")  # pragma: no cover
     return "", ""  # pragma: no cover
 
 
+_log.debug("[INIT] cargando credenciales de st.secrets...")
 SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
+_log.debug(
+    "[INIT] st.secrets -> URL=%s KEY_prefix=%s",
+    (SUPABASE_URL or "VACIO")[:35],
+    (SUPABASE_KEY or "VACIO")[:20],
+)
 if not SUPABASE_URL or not SUPABASE_KEY:
+    _log.debug("[INIT] st.secrets vacio, usando fallback de archivo local...")
     _fallback_url, _fallback_key = _load_supabase_from_local_secrets()
     SUPABASE_URL = SUPABASE_URL or _fallback_url
     SUPABASE_KEY = SUPABASE_KEY or _fallback_key
+    _log.debug(
+        "[INIT] tras fallback -> URL=%s KEY_prefix=%s",
+        (SUPABASE_URL or "VACIO")[:35],
+        (SUPABASE_KEY or "VACIO")[:20],
+    )
+else:
+    _log.debug("[INIT] credenciales cargadas desde st.secrets OK")  # pragma: no cover
 
 # Nombres de las tablas en Supabase
 TABLE_INVENTARIO = "user_inventory"
@@ -184,15 +219,25 @@ def obtener_todos_los_productos_siigo(token: str) -> dict:
 
 def get_supabase_client():
     """Inicializa el cliente de Supabase."""
+    _log.debug(
+        "[SUPABASE-CLIENT] URL=%s KEY_prefix=%s KEY_len=%d",
+        (SUPABASE_URL or "VACIO")[:40],
+        (SUPABASE_KEY or "VACIO")[:20],
+        len(SUPABASE_KEY or ""),
+    )
     if not SUPABASE_URL or not SUPABASE_KEY:
+        _log.debug("[SUPABASE-CLIENT] credenciales vacias -> retornando None")
         st.warning(
             "⚠️ No se encontraron credenciales de Supabase en secrets. Los datos no se guardarán."
         )
         return None
     try:
+        _log.debug("[SUPABASE-CLIENT] llamando create_client...")
         supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        _log.debug("[SUPABASE-CLIENT] create_client OK")
         return supabase
     except Exception as e:
+        _log.debug("[SUPABASE-CLIENT] create_client ERROR: %s", e)
         st.error(f"Error al conectar con Supabase: {str(e)}")
         return None
 
@@ -1114,15 +1159,20 @@ def main():
                     "Iniciar Sesión →", use_container_width=True, type="primary"
                 ):
                     email_clean = usuario_email.strip().lower()
+                    _log.debug("[LOGIN] intento -> email=%s pass_len=%d", email_clean, len(usuario_password))
                     if not email_clean or not usuario_password:
                         st.warning("Completa tu correo y contraseña.")
                     elif email_clean not in ALLOWED_EMAILS:
+                        _log.debug("[LOGIN] email no autorizado: %s", email_clean)
                         st.error("Acceso denegado. Este correo no está autorizado.")
                     else:
+                        _log.debug("[LOGIN] email autorizado, obteniendo cliente Supabase...")
                         supabase = get_supabase_client()
                         if supabase is None:
+                            _log.debug("[LOGIN] supabase client es None -> fallo")
                             st.error("Sin conexión a Supabase.")
                         else:
+                            _log.debug("[LOGIN] cliente OK, llamando sign_in_with_password...")
                             with st.spinner("Verificando credenciales…"):
                                 try:
                                     resp = supabase.auth.sign_in_with_password(
@@ -1131,6 +1181,11 @@ def main():
                                             "password": usuario_password,
                                         }
                                     )
+                                    _log.debug(
+                                        "[LOGIN] respuesta -> session=%s user=%s",
+                                        bool(resp.session),
+                                        resp.user.email if resp.user else None,
+                                    )
                                     if resp.session:
                                         st.session_state["usuario_email"] = (
                                             resp.user.email if resp.user else None
@@ -1138,11 +1193,14 @@ def main():
                                         # Renueva token Siigo más adelante al cargar datos.
                                         if "token_siigo" in st.session_state:
                                             del st.session_state["token_siigo"]
+                                        _log.debug("[LOGIN] LOGIN EXITOSO para %s", email_clean)
                                         st.rerun()
                                     else:
+                                        _log.debug("[LOGIN] sin session en la respuesta")
                                         st.error("Credenciales incorrectas.")
                                 except Exception as e:
                                     msg = str(e)
+                                    _log.debug("[LOGIN] excepcion en sign_in: %s", msg)
                                     if "Invalid login credentials" in msg:
                                         st.error("Correo o contraseña incorrectos.")
                                     elif "Email not confirmed" in msg:
@@ -1151,6 +1209,17 @@ def main():
                                         )
                                     else:
                                         st.error(f"Error: {msg}")
+
+                # Panel de debug (visible en pantalla para facilitar diagnóstico)
+                with st.expander("🔍 Debug — estado de credenciales"):
+                    st.code(
+                        f"SUPABASE_URL  : {(SUPABASE_URL or 'VACIO')[:50]}\n"
+                        f"SUPABASE_KEY  : {(SUPABASE_KEY or 'VACIO')[:25]}... (len={len(SUPABASE_KEY or '')})\n"
+                        f"KEY formato   : {'JWT (eyJ...)' if (SUPABASE_KEY or '').startswith('eyJ') else 'OTRO - INCORRECTO'}\n"
+                        f"st.secrets keys: {list(st.secrets.keys()) if hasattr(st, 'secrets') else 'N/A'}\n"
+                        f"cwd           : {Path.cwd()}",
+                        language="text",
+                    )
         st.stop()
 
     # ── NAVBAR ───────────────────────────────────────────────────────────────
