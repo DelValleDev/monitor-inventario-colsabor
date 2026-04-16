@@ -958,9 +958,13 @@ def main():
 
     # ── LOGIN ────────────────────────────────────────────────────────────────
     if "token_siigo" not in st.session_state:
-        # Cosmic Forge background + login shell responsive sin scroll
-        st.html(
-            """<style>
+        _theme = st.session_state.get("theme_override", "auto")
+        _theme_icon = "☀️" if _theme == "dark" else "🌙"
+
+        # Cosmic Forge solo en oscuro/auto; modo claro usa el fondo de _MAIN_CSS
+        if _theme != "light":
+            st.html(
+                """<style>
 .stApp {
   background: #010814 !important;
   background-image:
@@ -970,67 +974,50 @@ def main():
     radial-gradient(circle at 1px 1px, rgba(59,130,246,0.07) 1px, transparent 0) !important;
   background-size: auto, auto, auto, 28px 28px !important;
 }
-.block-container {
-  max-width: 100% !important;
-  padding: 0 !important;
-}
-.cs-login-shell {
-  min-height: 100dvh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 18px 14px;
-}
-.cs-login-panel {
-  width: min(460px, 92vw);
-}
-.st-key-login_theme {
-    position: relative;
-    z-index: 5;
-  width: auto !important;
-    margin: 0 0 10px 0;
-}
-.st-key-login_theme button {
-    width: 40px !important;
-    min-width: 40px !important;
-    height: 40px !important;
-  border-radius: 999px !important;
-  padding: 0 !important;
-}
-@media (max-width: 640px) {
-  .cs-login-shell { min-height: 100svh; padding: 10px; }
-  .cs-login-panel { width: 100%; }
-}
 </style>"""
-        )
+            )
 
+        # Card HTML (parte superior visual): flex-centrado en pantalla completa
         st.markdown(
             f"""
-            <div class="cs-login-shell">
-              <div class="cs-login-panel">
-                <div class="cs-login-card" style="margin:0">
-                  <div style="display:flex;justify-content:center;margin-bottom:20px">{_LOGO_LG}</div>
-                  <div class="cs-login-subtitle">Sistema de Inventario</div>
+            <div class="cs-login-wrap">
+              <div class="cs-login-card">
+                <div style="display:flex;justify-content:center;margin-bottom:20px">
+                  {_LOGO_LG}
                 </div>
+                <div class="cs-login-subtitle">Sistema de Inventario</div>
               </div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-        _, col, _ = st.columns([1, 1.22, 1])
+        # Hack de margen negativo: sube la columna de widgets para que se solape
+        # visualmente con la parte inferior del card HTML de arriba.
+        _, col, _ = st.columns([1, 1.1, 1])
         with col:
-            # Toggle dentro del panel de login (arriba-izquierda)
-            _theme = st.session_state.get("theme_override", "auto")
-            _theme_icon = "☀️" if _theme == "dark" else "🌙"
+            st.markdown(
+                "<style>"
+                ".cs-login-wrap{margin-bottom:-320px}"
+                ".st-key-login_theme{position:fixed;top:16px;left:16px;"
+                "z-index:1100;width:auto!important}"
+                ".st-key-login_theme button{width:44px!important;"
+                "min-width:44px!important;height:44px!important;"
+                "border-radius:999px!important;padding:0!important;"
+                "font-size:20px!important}"
+                "</style>",
+                unsafe_allow_html=True,
+            )
             st.markdown('<div class="cs-btn-ghost">', unsafe_allow_html=True)
             if st.button(_theme_icon, help="Cambiar tema", key="login_theme"):
-                st.session_state["theme_override"] = "light" if _theme == "dark" else "dark"
+                st.session_state["theme_override"] = (
+                    "light" if _theme == "dark" else "dark"
+                )
                 st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
-
             st.markdown(
-                '<div style="text-align:center;margin-bottom:20px"><span class="cs-badge">🔒 Acceso Restringido</span></div>',
+                '<div style="text-align:center;margin-bottom:20px">'
+                '<span class="cs-badge">🔒 Acceso Restringido</span></div>',
                 unsafe_allow_html=True,
             )
             usuario_email = st.text_input(
@@ -1059,7 +1046,10 @@ def main():
                         with st.spinner("Verificando credenciales…"):
                             try:
                                 resp = supabase.auth.sign_in_with_password(
-                                    {"email": email_clean, "password": usuario_password}
+                                    {
+                                        "email": email_clean,
+                                        "password": usuario_password,
+                                    }
                                 )
                                 if resp.session:
                                     resultado_siigo = autenticar_siigo(
