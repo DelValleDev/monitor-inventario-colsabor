@@ -7,7 +7,9 @@ import streamlit as st
 import pandas as pd
 import requests
 import plotly.graph_objects as go
+import base64
 from datetime import datetime
+from pathlib import Path
 from supabase import create_client
 
 # ============================================================================
@@ -565,6 +567,7 @@ _VARS_LIGHT = """
   --text-primary: #07111e;
   --text-secondary: #334155;
   --text-muted: #64748b;
+    --placeholder-color: #334155;
   --accent: #2563eb;
   --accent-hover: #1d4ed8;
   --accent-light: #dbeafe;
@@ -599,6 +602,7 @@ _VARS_DARK = """
   --text-primary: #f0f6ff;
   --text-secondary: #94a3b8;
   --text-muted: #475569;
+    --placeholder-color: #94a3b8;
   --accent: #3b82f6;
   --accent-hover: #60a5fa;
   --accent-light: rgba(59,130,246,0.14);
@@ -770,7 +774,7 @@ html, body, [class*="st-"], .stApp {
 .stTextInput > div > div > input:focus { border-color: var(--accent) !important; box-shadow: 0 0 0 3px var(--accent-glow) !important; }
 label[data-baseweb="form-control-label"] { color: var(--text-secondary) !important; font-size: 12px !important; font-weight: 600 !important; font-family: 'Inter', sans-serif !important; }
 [data-baseweb="tag"] { background: var(--accent-light) !important; color: var(--accent) !important; border: 1px solid rgba(37,99,235,0.15) !important; border-radius: 6px !important; }
-.stTextInput > div > div > input::placeholder { color: var(--text-muted) !important; opacity: 0.5 !important; }
+.stTextInput > div > div > input::placeholder { color: var(--placeholder-color) !important; opacity: 0.78 !important; }
 
 /* ── Data Table ──────────────────────────────────────────────────── */
 .stDataFrame { border-radius: 16px !important; overflow: hidden !important; }
@@ -817,27 +821,52 @@ label[data-baseweb="form-control-label"] { color: var(--text-secondary) !importa
 """
 )
 
+
+def _load_logo_data_uri() -> str:
+    """Carga el logo PNG real y lo expone como data URI para HTML."""
+    logo_path = Path(__file__).resolve().parents[1] / "ColsaborSAS.PNG"
+    try:
+        return (
+            "data:image/png;base64,"
+            + base64.b64encode(logo_path.read_bytes()).decode("ascii")
+        )
+    except Exception:  # pragma: no cover
+        return ""
+
+
+_LOGO_DATA_URI = _load_logo_data_uri()
+
 _LOGO_SM = (
-    '<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">'
-    '<rect width="20" height="20" rx="6" fill="rgba(255,255,255,0.10)"/>'
-    '<path d="M7 7.5C7 5.8 8.2 4.8 10 4.8C11.8 4.8 13 5.8 13 7.2C13 8.8 11.2 9.7 10 10.2'
-    'C8.8 10.7 7 11.5 7 13C7 14.4 8.2 15.2 10 15.2C11.8 15.2 13 14.2 13 13.4"'
-    ' stroke="white" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>'
+    f'<img src="{_LOGO_DATA_URI}" alt="Colsabor" '
+    'style="width:20px;height:20px;object-fit:contain;display:block"/>'
+    if _LOGO_DATA_URI
+    else (
+        '<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">'
+        '<rect width="20" height="20" rx="6" fill="rgba(255,255,255,0.10)"/>'
+        '<path d="M7 7.5C7 5.8 8.2 4.8 10 4.8C11.8 4.8 13 5.8 13 7.2C13 8.8 11.2 9.7 10 10.2'
+        'C8.8 10.7 7 11.5 7 13C7 14.4 8.2 15.2 10 15.2C11.8 15.2 13 14.2 13 13.4"'
+        ' stroke="white" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>'
+    )
 )
 
 _LOGO_LG = (
-    '<svg width="120" height="48" viewBox="0 0 120 48" fill="none" xmlns="http://www.w3.org/2000/svg">'
-    '<rect width="120" height="48" rx="12" fill="rgba(255,255,255,0.07)"/>'
-    '<rect x="10" y="10" width="28" height="28" rx="8" fill="url(#lg)"/>'
-    '<defs><linearGradient id="lg" x1="10" y1="10" x2="38" y2="38" gradientUnits="userSpaceOnUse">'
-    '<stop stop-color="#3b82f6"/><stop offset="1" stop-color="#0891b2"/></linearGradient></defs>'
-    '<text x="26" y="29" font-family="Arial,sans-serif" font-size="13" font-weight="900" '
-    'fill="white" text-anchor="middle" letter-spacing="-0.5">CS</text>'
-    '<text x="50" y="26" font-family="Arial,sans-serif" font-size="13" font-weight="800" '
-    'fill="white" letter-spacing="-0.3">COLSABOR</text>'
-    '<text x="50" y="38" font-family="Arial,sans-serif" font-size="7.5" font-weight="500" '
-    'fill="rgba(255,255,255,0.55)" letter-spacing="1.2">S.A.S</text>'
-    "</svg>"
+    f'<img src="{_LOGO_DATA_URI}" alt="Colsabor" '
+    'style="width:280px;max-width:100%;height:auto;display:block;filter:drop-shadow(0 10px 22px rgba(0,0,0,0.35));"/>'
+    if _LOGO_DATA_URI
+    else (
+        '<svg width="120" height="48" viewBox="0 0 120 48" fill="none" xmlns="http://www.w3.org/2000/svg">'
+        '<rect width="120" height="48" rx="12" fill="rgba(255,255,255,0.07)"/>'
+        '<rect x="10" y="10" width="28" height="28" rx="8" fill="url(#lg)"/>'
+        '<defs><linearGradient id="lg" x1="10" y1="10" x2="38" y2="38" gradientUnits="userSpaceOnUse">'
+        '<stop stop-color="#3b82f6"/><stop offset="1" stop-color="#0891b2"/></linearGradient></defs>'
+        '<text x="26" y="29" font-family="Arial,sans-serif" font-size="13" font-weight="900" '
+        'fill="white" text-anchor="middle" letter-spacing="-0.5">CS</text>'
+        '<text x="50" y="26" font-family="Arial,sans-serif" font-size="13" font-weight="800" '
+        'fill="white" letter-spacing="-0.3">COLSABOR</text>'
+        '<text x="50" y="38" font-family="Arial,sans-serif" font-size="7.5" font-weight="500" '
+        'fill="rgba(255,255,255,0.55)" letter-spacing="1.2">S.A.S</text>'
+        "</svg>"
+    )
 )
 
 
