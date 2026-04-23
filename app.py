@@ -15,6 +15,7 @@ import tomllib
 from datetime import datetime
 from pathlib import Path
 from supabase import create_client
+
 try:
     from inventory_monitor.loading_messages import get_greeting, get_random_message
 except ModuleNotFoundError:  # pragma: no cover
@@ -52,7 +53,11 @@ def _load_supabase_from_local_secrets() -> tuple[str, str]:
     ]
     _log.debug("[SECRETS-FALLBACK] cwd=%s", Path.cwd())
     for secrets_path in candidate_paths:
-        _log.debug("[SECRETS-FALLBACK] probando: %s  existe=%s", secrets_path, secrets_path.exists())
+        _log.debug(
+            "[SECRETS-FALLBACK] probando: %s  existe=%s",
+            secrets_path,
+            secrets_path.exists(),
+        )
         if not secrets_path.exists():  # pragma: no cover
             continue
         try:
@@ -71,7 +76,9 @@ def _load_supabase_from_local_secrets() -> tuple[str, str]:
         if url and key:
             return url, key
 
-    _log.debug("[SECRETS-FALLBACK] no se encontraron credenciales en ninguna ruta")  # pragma: no cover
+    _log.debug(
+        "[SECRETS-FALLBACK] no se encontraron credenciales en ninguna ruta"
+    )  # pragma: no cover
     return "", ""  # pragma: no cover
 
 
@@ -102,7 +109,9 @@ if not SUPABASE_URL or not SUPABASE_KEY:
         (SUPABASE_KEY or "VACIO")[:20],
     )
 if not SUPABASE_URL or not SUPABASE_KEY:  # pragma: no cover
-    _log.debug("[INIT] fallback a constantes hardcodeadas (anon key publica)")  # pragma: no cover
+    _log.debug(
+        "[INIT] fallback a constantes hardcodeadas (anon key publica)"
+    )  # pragma: no cover
     SUPABASE_URL = SUPABASE_URL or _SUPABASE_URL_DEFAULT  # pragma: no cover
     SUPABASE_KEY = SUPABASE_KEY or _SUPABASE_KEY_DEFAULT  # pragma: no cover
 _log.debug(
@@ -171,7 +180,9 @@ def autenticar_siigo(username: str, access_key: str) -> dict:
         return {"success": False, "error": f"Error de conexión: {str(e)}"}
 
 
-def obtener_todos_los_productos_siigo(token: str, referencias_requeridas: list[str] | None = None) -> dict:
+def obtener_todos_los_productos_siigo(
+    token: str, referencias_requeridas: list[str] | None = None
+) -> dict:
     """
     Obtiene productos de Siigo. Si referencias_requeridas se proporciona, solo obtiene esos.
     Si no, obtiene TODOS con paginación.
@@ -195,23 +206,33 @@ def obtener_todos_los_productos_siigo(token: str, referencias_requeridas: list[s
 
     try:
         # ── Opción optimizada: buscar solo referencias requeridas ────
-        if referencias_requeridas and len(referencias_requeridas) > 0:  # pragma: no cover
+        if (
+            referencias_requeridas and len(referencias_requeridas) > 0
+        ):  # pragma: no cover
             # Hacer búsqueda individual para cada referencia (más rápido que descargar todos)
             for ref in referencias_requeridas:  # pragma: no cover
                 params = {"code": str(ref).strip()}  # pragma: no cover
                 try:  # pragma: no cover
-                    response = requests.get(url, headers=headers, params=params, timeout=30)  # pragma: no cover
+                    response = requests.get(
+                        url, headers=headers, params=params, timeout=30
+                    )  # pragma: no cover
                     if response.status_code == 200:  # pragma: no cover
                         data = response.json()  # pragma: no cover
                         productos_pagina = []  # pragma: no cover
                         if isinstance(data, list):  # pragma: no cover
                             productos_pagina = data  # pragma: no cover
-                        elif isinstance(data, dict) and "results" in data:  # pragma: no cover
+                        elif (
+                            isinstance(data, dict) and "results" in data
+                        ):  # pragma: no cover
                             productos_pagina = data["results"]  # pragma: no cover
                         todos_productos.extend(productos_pagina)  # pragma: no cover
                 except requests.exceptions.RequestException:  # pragma: no cover
                     pass  # pragma: no cover
-            return {"success": True, "data": todos_productos, "total": len(todos_productos)}  # pragma: no cover
+            return {
+                "success": True,
+                "data": todos_productos,
+                "total": len(todos_productos),
+            }  # pragma: no cover
 
         # ── Opción estándar: obtener TODOS los productos con paginación ────
         page = 1
@@ -1001,12 +1022,12 @@ _LOGO_SM = (
 
 _LOGO_LG = (
     f'<div style="width:220px;max-width:100%;padding:18px 20px;'
-    f'background:rgba(255,255,255,0.10);backdrop-filter:blur(12px);'
-    f'border-radius:20px;border:1px solid rgba(255,255,255,0.15);'
+    f"background:rgba(255,255,255,0.10);backdrop-filter:blur(12px);"
+    f"border-radius:20px;border:1px solid rgba(255,255,255,0.15);"
     f'display:flex;justify-content:center;align-items:center;margin:0 auto 4px;">'
     f'<img src="{_LOGO_DATA_URI}" alt="Colsabor" '
     'style="width:180px;max-width:100%;height:auto;display:block;'
-    'filter:brightness(1.15) contrast(1.08) saturate(1.1) '
+    "filter:brightness(1.15) contrast(1.08) saturate(1.1) "
     'drop-shadow(0 4px 12px rgba(0,0,0,0.35));"/>'
     "</div>"
     if _LOGO_DATA_URI
@@ -1039,12 +1060,17 @@ def _inject_css():
 
 
 def _render_loading(msg: str):
-    """Pantalla de carga fullscreen estática con saludo y mensaje random."""
+    """Pantalla de carga fullscreen estática con saludo, mensaje random y barra de progreso."""
     usuario_email = st.session_state.get("usuario_email", "")
     saludo = get_greeting(usuario_email)
     mensaje_random = get_random_message(usuario_email)
+    
+    # Obtener progreso de carga
+    progreso_pct = st.session_state.get("_loading_progress", 0)
+    progreso_text = st.session_state.get("_loading_text", "Inicializando...")
 
-    st.html(f"""
+    st.html(
+        f"""
 <style>
 /* ── Bloquear scroll de toda la app ─────────────────────── */
 html, body, [data-testid="stAppViewContainer"],
@@ -1069,6 +1095,10 @@ html, body, [data-testid="stAppViewContainer"],
 @keyframes cs-orb {{
   0%,100% {{ transform: translate(0,0) scale(1); }}
   50%     {{ transform: translate(20px,-12px) scale(1.06); }}
+}}
+@keyframes cs-progress-pulse {{
+  0%,100% {{ box-shadow: 0 0 0 0 rgba(59,130,246,0.4); }}
+  50%     {{ box-shadow: 0 0 0 8px rgba(59,130,246,0); }}
 }}
 
 /* ── Overlay fullscreen ──────────────────────────────────── */
@@ -1182,6 +1212,7 @@ html, body, [data-testid="stAppViewContainer"],
   align-items: flex-end;
   gap: 5px;
   height: 32px;
+  margin-bottom: 28px;
 }}
 .cs-splash-bar {{
   width: 5px;
@@ -1194,6 +1225,52 @@ html, body, [data-testid="stAppViewContainer"],
 .cs-splash-bar:nth-child(3) {{ animation-delay: .36s;  height: 28px; }}
 .cs-splash-bar:nth-child(4) {{ animation-delay: .54s;  height: 18px; }}
 .cs-splash-bar:nth-child(5) {{ animation-delay: .72s;  height: 10px; }}
+
+/* Barra de progreso */
+.cs-progress-container {{
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 24px;
+}}
+.cs-progress-track {{
+  width: 100%;
+  height: 6px;
+  background: rgba(59,130,246,0.12);
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid rgba(59,130,246,0.2);
+}}
+.cs-progress-fill {{
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #22d3ee);
+  width: {progreso_pct}%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+  box-shadow: 0 0 12px rgba(59,130,246,0.4);
+}}
+.cs-progress-text {{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-muted, #64748b);
+  letter-spacing: .05em;
+}}
+.cs-progress-percent {{
+  color: #3b82f6;
+  font-weight: 700;
+}}
+.cs-progress-label {{
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}}
 
 /* Tag estado */
 .cs-splash-status {{
@@ -1231,12 +1308,24 @@ html, body, [data-testid="stAppViewContainer"],
       <div class="cs-splash-bar"></div>
       <div class="cs-splash-bar"></div>
     </div>
+    
+    <!-- Barra de progreso -->
+    <div class="cs-progress-container">
+      <div class="cs-progress-track">
+        <div class="cs-progress-fill"></div>
+      </div>
+      <div class="cs-progress-text">
+        <span class="cs-progress-label">{progreso_text}</span>
+        <span class="cs-progress-percent">{progreso_pct}%</span>
+      </div>
+    </div>
   </div>
 
   <!-- Pie de página -->
   <div class="cs-splash-status">Monitor de Inventario · Colsabor S.A.S</div>
 </div>
-""")
+"""
+    )
 
 
 # ── Plotly chart helpers ──────────────────────────────────────────────────────
@@ -1431,7 +1520,11 @@ def main():
                     "Iniciar Sesión →", use_container_width=True, type="primary"
                 ):
                     email_clean = usuario_email.strip().lower()
-                    _log.debug("[LOGIN] intento -> email=%s pass_len=%d", email_clean, len(usuario_password))
+                    _log.debug(
+                        "[LOGIN] intento -> email=%s pass_len=%d",
+                        email_clean,
+                        len(usuario_password),
+                    )
                     # Reiniciar log de UI
                     st.session_state["_dbg_log"] = []
 
@@ -1448,8 +1541,12 @@ def main():
                         st.error("Acceso denegado. Este correo no está autorizado.")
                     else:
                         _dbg(f"✅ Email autorizado: {email_clean}")
-                        _log.debug("[LOGIN] email autorizado, obteniendo cliente Supabase...")
-                        _dbg(f"🔑 URL={SUPABASE_URL[:30] if SUPABASE_URL else 'VACÍO'} KEY_len={len(SUPABASE_KEY or '')}")
+                        _log.debug(
+                            "[LOGIN] email autorizado, obteniendo cliente Supabase..."
+                        )
+                        _dbg(
+                            f"🔑 URL={SUPABASE_URL[:30] if SUPABASE_URL else 'VACÍO'} KEY_len={len(SUPABASE_KEY or '')}"
+                        )
                         supabase = get_supabase_client()
                         if supabase is None:
                             _dbg("❌ get_supabase_client() devolvió None")
@@ -1457,7 +1554,9 @@ def main():
                             st.error("Sin conexión a Supabase.")
                         else:
                             _dbg("✅ Cliente Supabase creado OK")
-                            _log.debug("[LOGIN] cliente OK, llamando sign_in_with_password...")
+                            _log.debug(
+                                "[LOGIN] cliente OK, llamando sign_in_with_password..."
+                            )
                             with st.spinner("Verificando credenciales…"):
                                 try:
                                     _dbg("⏳ Llamando sign_in_with_password...")
@@ -1480,11 +1579,15 @@ def main():
                                         # Renueva token Siigo más adelante al cargar datos.
                                         if "token_siigo" in st.session_state:
                                             del st.session_state["token_siigo"]
-                                        _log.debug("[LOGIN] LOGIN EXITOSO para %s", email_clean)
+                                        _log.debug(
+                                            "[LOGIN] LOGIN EXITOSO para %s", email_clean
+                                        )
                                         st.rerun()
                                     else:
                                         _dbg("❌ Respuesta sin session")
-                                        _log.debug("[LOGIN] sin session en la respuesta")
+                                        _log.debug(
+                                            "[LOGIN] sin session en la respuesta"
+                                        )
                                         st.error("Credenciales incorrectas.")
                                 except Exception as e:
                                     msg = str(e)
@@ -1504,8 +1607,8 @@ def main():
                     lines = "\n".join(st.session_state["_dbg_log"])
                     st.markdown(
                         f'<div style="margin-top:10px;padding:10px 14px;border-radius:10px;'
-                        f'background:rgba(0,0,0,0.40);border:1px solid rgba(99,102,241,0.25);'
-                        f'font-family:JetBrains Mono,monospace;font-size:11px;line-height:1.8;'
+                        f"background:rgba(0,0,0,0.40);border:1px solid rgba(99,102,241,0.25);"
+                        f"font-family:JetBrains Mono,monospace;font-size:11px;line-height:1.8;"
                         f'color:#c4b5fd;white-space:pre-wrap">'
                         f'<span style="color:#818cf8;font-size:9px;letter-spacing:.1em;font-weight:700">ÚLTIMO INTENTO</span>\n'
                         f"{lines}</div>",
@@ -1518,7 +1621,9 @@ def main():
                 _secrets_ok = bool(st.secrets.get("SUPABASE_URL", ""))
                 _status_url = "✅ Configurada" if _url_ok else "❌ No encontrada"
                 _status_key = "✅ JWT válido" if _key_ok else "❌ Formato incorrecto"
-                _status_src = "☁️ Streamlit Cloud" if _secrets_ok else "📦 Fallback interno"
+                _status_src = (
+                    "☁️ Streamlit Cloud" if _secrets_ok else "📦 Fallback interno"
+                )
                 st.markdown(
                     f"""
 <div style="margin-top:16px;padding:12px 14px;border-radius:12px;
@@ -1597,6 +1702,10 @@ letter-spacing:.12em">🔍 ESTADO CONEXIÓN SUPABASE</div>
     if needs_excel or needs_siigo:
         # Mostrar loading screen antes de las llamadas de red
         _loading_start = time.time()
+        
+        # Inicializar progreso
+        st.session_state["_loading_progress"] = 0
+        st.session_state["_loading_text"] = "Inicializando..."
         _render_loading(
             "Descargando productos de Siigo…"
             if not needs_excel
@@ -1604,9 +1713,15 @@ letter-spacing:.12em">🔍 ESTADO CONEXIÓN SUPABASE</div>
         )
 
         if needs_excel:
+            st.session_state["_loading_progress"] = 10
+            st.session_state["_loading_text"] = "Cargando inventario mínimo desde Supabase..."
+            _render_loading("Cargando inventario mínimo…")
+            
             df_excel = cargar_inventario_minimo_supabase()
             if df_excel is not None:
                 st.session_state["df_excel_cache"] = df_excel
+                st.session_state["_loading_progress"] = 35
+                st.session_state["_loading_text"] = "Inventario mínimo cargado ✓"
             else:
                 st.error("No se pudo cargar el inventario mínimo. Verifica Supabase.")
                 st.stop()
@@ -1617,12 +1732,17 @@ letter-spacing:.12em">🔍 ESTADO CONEXIÓN SUPABASE</div>
         if needs_siigo:
             datos_guardados = None
             if "forzar_actualizacion" not in st.session_state:
+                st.session_state["_loading_progress"] = 40
+                st.session_state["_loading_text"] = "Buscando datos en caché..."
+                _render_loading("Buscando datos en caché…")
                 datos_guardados = cargar_productos_siigo_guardados()
 
             if datos_guardados is not None:
                 df_siigo, _, ultima_actualizacion = datos_guardados
                 productos_siigo = []
                 total_obtenidos = len(df_siigo)
+                st.session_state["_loading_progress"] = 100
+                st.session_state["_loading_text"] = "Datos cargados desde caché ✓"
                 st.session_state.update(
                     {
                         "df_siigo_cache": df_siigo,
@@ -1633,6 +1753,10 @@ letter-spacing:.12em">🔍 ESTADO CONEXIÓN SUPABASE</div>
                 )
             else:
                 if "token_siigo" not in st.session_state:
+                    st.session_state["_loading_progress"] = 45
+                    st.session_state["_loading_text"] = "Autenticando en Siigo..."
+                    _render_loading("Autenticando en Siigo…")
+                    
                     resultado_siigo = autenticar_siigo(
                         "dirtec@colsabor.com.co",
                         SIIGO_ACCESS_KEY,
@@ -1644,6 +1768,8 @@ letter-spacing:.12em">🔍 ESTADO CONEXIÓN SUPABASE</div>
                         st.error(resultado_siigo["error"])
                         st.stop()
                     st.session_state["token_siigo"] = resultado_siigo["token"]
+                    st.session_state["_loading_progress"] = 55
+                    st.session_state["_loading_text"] = "Autenticación exitosa ✓"
 
                 # Obtener referencias requeridas del inventario mínimo
                 referencias_requeridas = (
@@ -1652,16 +1778,30 @@ letter-spacing:.12em">🔍 ESTADO CONEXIÓN SUPABASE</div>
                     else []
                 )
 
+                st.session_state["_loading_progress"] = 60
+                st.session_state["_loading_text"] = f"Obteniendo {len(referencias_requeridas)} productos..."
+                _render_loading("Descargando productos…")
+
                 resultado = obtener_todos_los_productos_siigo(
                     st.session_state["token_siigo"],
-                    referencias_requeridas=referencias_requeridas if referencias_requeridas else None,
+                    referencias_requeridas=(
+                        referencias_requeridas if referencias_requeridas else None
+                    ),
                 )
                 if not resultado["success"]:
                     st.error(resultado["error"])
                     st.stop()
                 productos_siigo = resultado["data"]
                 total_obtenidos = resultado.get("total", len(productos_siigo))
+                
+                st.session_state["_loading_progress"] = 80
+                st.session_state["_loading_text"] = "Procesando datos..."
+                _render_loading("Procesando datos…")
+                
                 df_siigo = procesar_productos_siigo(productos_siigo)
+                st.session_state["_loading_progress"] = 95
+                st.session_state["_loading_text"] = "Guardando en caché..."
+                
                 st.session_state.update(
                     {
                         "df_siigo_cache": df_siigo,
@@ -1671,6 +1811,8 @@ letter-spacing:.12em">🔍 ESTADO CONEXIÓN SUPABASE</div>
                     }
                 )
                 guardar_productos_siigo(productos_siigo)
+                st.session_state["_loading_progress"] = 100
+                st.session_state["_loading_text"] = "¡Listo! 🎉"
 
         # Limpiar flag ANTES del rerun para que tests lo vean eliminado
         if "forzar_actualizacion" in st.session_state:

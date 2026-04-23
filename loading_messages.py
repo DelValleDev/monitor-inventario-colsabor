@@ -268,6 +268,7 @@ MESSAGES: list[str] = (
 
 # ── Funciones públicas ────────────────────────────────────────────────────────
 
+
 def get_greeting(email: str) -> str:
     """Devuelve saludo personalizado basado en hora y email del usuario."""
     hour = datetime.now().hour
@@ -278,7 +279,9 @@ def get_greeting(email: str) -> str:
     else:  # pragma: no cover
         saludo = "Buenas noches"  # pragma: no cover
 
-    role, name = _PERSONAS.get(email, ("", email.split("@")[0].replace(".", " ").title()))
+    role, name = _PERSONAS.get(
+        email, ("", email.split("@")[0].replace(".", " ").title())
+    )
     if role:
         return f"{saludo}, {role} {name}"
     return f"{saludo}, {name}"  # pragma: no cover
