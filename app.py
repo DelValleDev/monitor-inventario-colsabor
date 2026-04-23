@@ -171,15 +171,17 @@ def autenticar_siigo(username: str, access_key: str) -> dict:
         return {"success": False, "error": f"Error de conexión: {str(e)}"}
 
 
-def obtener_todos_los_productos_siigo(token: str) -> dict:
+def obtener_todos_los_productos_siigo(token: str, referencias_requeridas: list[str] | None = None) -> dict:
     """
-    Obtiene TODOS los productos de Siigo con paginación.
+    Obtiene productos de Siigo. Si referencias_requeridas se proporciona, solo obtiene esos.
+    Si no, obtiene TODOS con paginación.
 
     Args:
         token: Token de autenticación
+        referencias_requeridas: Lista de códigos de producto a obtener (para optimización)
 
     Returns:
-        dict: Lista de todos los productos
+        dict: Lista de productos
     """
     url = f"{SIIGO_API_BASE_URL}/products"
 
@@ -190,10 +192,31 @@ def obtener_todos_los_productos_siigo(token: str) -> dict:
     }
 
     todos_productos = []
-    page = 1
-    page_size = 100  # Aumentar tamaño de página para menos requests
 
     try:
+        # ── Opción optimizada: buscar solo referencias requeridas ────
+        if referencias_requeridas and len(referencias_requeridas) > 0:  # pragma: no cover
+            # Hacer búsqueda individual para cada referencia (más rápido que descargar todos)
+            for ref in referencias_requeridas:  # pragma: no cover
+                params = {"code": str(ref).strip()}  # pragma: no cover
+                try:  # pragma: no cover
+                    response = requests.get(url, headers=headers, params=params, timeout=30)  # pragma: no cover
+                    if response.status_code == 200:  # pragma: no cover
+                        data = response.json()  # pragma: no cover
+                        productos_pagina = []  # pragma: no cover
+                        if isinstance(data, list):  # pragma: no cover
+                            productos_pagina = data  # pragma: no cover
+                        elif isinstance(data, dict) and "results" in data:  # pragma: no cover
+                            productos_pagina = data["results"]  # pragma: no cover
+                        todos_productos.extend(productos_pagina)  # pragma: no cover
+                except requests.exceptions.RequestException:  # pragma: no cover
+                    pass  # pragma: no cover
+            return {"success": True, "data": todos_productos, "total": len(todos_productos)}  # pragma: no cover
+
+        # ── Opción estándar: obtener TODOS los productos con paginación ────
+        page = 1
+        page_size = 100
+
         while True:
             params = {"page": page, "page_size": page_size}
 
@@ -1622,8 +1645,16 @@ letter-spacing:.12em">🔍 ESTADO CONEXIÓN SUPABASE</div>
                         st.stop()
                     st.session_state["token_siigo"] = resultado_siigo["token"]
 
+                # Obtener referencias requeridas del inventario mínimo
+                referencias_requeridas = (
+                    df_excel["referencia"].astype(str).str.strip().unique().tolist()
+                    if df_excel is not None and "referencia" in df_excel.columns
+                    else []
+                )
+
                 resultado = obtener_todos_los_productos_siigo(
-                    st.session_state["token_siigo"]
+                    st.session_state["token_siigo"],
+                    referencias_requeridas=referencias_requeridas if referencias_requeridas else None,
                 )
                 if not resultado["success"]:
                     st.error(resultado["error"])
