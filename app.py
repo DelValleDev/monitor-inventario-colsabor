@@ -1912,6 +1912,11 @@ letter-spacing:.12em">🔍 ESTADO CONEXIÓN SUPABASE</div>
         st.warning(
             f"⚠️ {no_encontrados} referencia(s) del inventario mínimo no encontradas en Siigo."
         )
+        with st.expander(f"📋 Ver {no_encontrados} referencias no encontradas", expanded=False):
+            df_no_encontradas = df_resultado[df_resultado["Estado"].str.contains("No encontrado")][
+                ["Referencia", "Nombre", "Mínimo (g)"]
+            ].reset_index(drop=True)
+            st.table(df_no_encontradas)
 
     # ── FILTROS ───────────────────────────────────────────────────────────────
     st.markdown('<div class="cs-section">🔍 Filtros</div>', unsafe_allow_html=True)
