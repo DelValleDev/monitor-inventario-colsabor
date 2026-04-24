@@ -1064,14 +1064,25 @@ def _render_loading(msg: str):
     usuario_email = st.session_state.get("usuario_email", "")
     saludo = get_greeting(usuario_email)
     mensaje_random = get_random_message(usuario_email)
-    
+
     # Obtener progreso de carga
     progreso_pct = st.session_state.get("_loading_progress", 0)
     progreso_text = st.session_state.get("_loading_text", "Inicializando...")
 
+    # Detectar tema actual para aplicar colores correctos
+    theme = st.session_state.get("theme_override", "auto")
+    # Si es auto, usar variables de Streamlit para detectar
+    # Inyectar variables de tema adecuadas
+    theme_vars = _VARS_DARK if theme == "dark" else _VARS_LIGHT
+
     st.html(
         f"""
 <style>
+/* ── Variables de tema ──────────────────────────────────── */
+:root {{
+  {theme_vars}
+}}
+
 /* ── Bloquear scroll de toda la app ─────────────────────── */
 html, body, [data-testid="stAppViewContainer"],
 [data-testid="stMain"], .main, .block-container {{
@@ -1110,7 +1121,7 @@ html, body, [data-testid="stAppViewContainer"],
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: var(--bg-main, #0d1117);
+  background: var(--bg-base);
   overflow: hidden;
   animation: cs-fade-in .4s ease both;
 }}
@@ -1145,8 +1156,9 @@ html, body, [data-testid="stAppViewContainer"],
   font-family: 'Inter', sans-serif;
   font-size: 13px; font-weight: 800;
   letter-spacing: .12em;
-  color: var(--text-primary, #e2e8f0);
+  color: var(--text-primary);
   opacity: .8;
+}}
 }}
 
 /* Contenido central */
@@ -1167,7 +1179,7 @@ html, body, [data-testid="stAppViewContainer"],
   font-family: 'Inter', sans-serif;
   font-size: clamp(18px, 3vw, 26px);
   font-weight: 700;
-  color: var(--text-primary, #e2e8f0);
+  color: var(--text-primary);
   letter-spacing: -.03em;
   margin-bottom: 6px;
 }}
@@ -1178,7 +1190,7 @@ html, body, [data-testid="stAppViewContainer"],
   font-size: 11px;
   letter-spacing: .12em;
   text-transform: uppercase;
-  color: var(--amber, #f59e0b);
+  color: var(--amber);
   margin-bottom: 36px;
   opacity: .85;
 }}
@@ -1199,7 +1211,7 @@ html, body, [data-testid="stAppViewContainer"],
 .cs-splash-quote {{
   font-family: 'Inter', sans-serif;
   font-size: clamp(12px, 1.6vw, 14px);
-  color: var(--text-muted, #64748b);
+  color: var(--text-muted);
   line-height: 1.6;
   max-width: 400px;
   margin-bottom: 36px;
@@ -1257,7 +1269,7 @@ html, body, [data-testid="stAppViewContainer"],
   align-items: center;
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
-  color: var(--text-muted, #64748b);
+  color: var(--text-muted);
   letter-spacing: .05em;
 }}
 .cs-progress-percent {{
@@ -1702,7 +1714,7 @@ letter-spacing:.12em">🔍 ESTADO CONEXIÓN SUPABASE</div>
     if needs_excel or needs_siigo:
         # Mostrar loading screen antes de las llamadas de red
         _loading_start = time.time()
-        
+
         # Inicializar progreso
         st.session_state["_loading_progress"] = 0
         st.session_state["_loading_text"] = "Inicializando..."
@@ -1714,9 +1726,11 @@ letter-spacing:.12em">🔍 ESTADO CONEXIÓN SUPABASE</div>
 
         if needs_excel:
             st.session_state["_loading_progress"] = 10
-            st.session_state["_loading_text"] = "Cargando inventario mínimo desde Supabase..."
+            st.session_state["_loading_text"] = (
+                "Cargando inventario mínimo desde Supabase..."
+            )
             _render_loading("Cargando inventario mínimo…")
-            
+
             df_excel = cargar_inventario_minimo_supabase()
             if df_excel is not None:
                 st.session_state["df_excel_cache"] = df_excel
@@ -1756,7 +1770,7 @@ letter-spacing:.12em">🔍 ESTADO CONEXIÓN SUPABASE</div>
                     st.session_state["_loading_progress"] = 45
                     st.session_state["_loading_text"] = "Autenticando en Siigo..."
                     _render_loading("Autenticando en Siigo…")
-                    
+
                     resultado_siigo = autenticar_siigo(
                         "dirtec@colsabor.com.co",
                         SIIGO_ACCESS_KEY,
@@ -1771,37 +1785,27 @@ letter-spacing:.12em">🔍 ESTADO CONEXIÓN SUPABASE</div>
                     st.session_state["_loading_progress"] = 55
                     st.session_state["_loading_text"] = "Autenticación exitosa ✓"
 
-                # Obtener referencias requeridas del inventario mínimo
-                referencias_requeridas = (
-                    df_excel["referencia"].astype(str).str.strip().unique().tolist()
-                    if df_excel is not None and "referencia" in df_excel.columns
-                    else []
-                )
-
                 st.session_state["_loading_progress"] = 60
-                st.session_state["_loading_text"] = f"Obteniendo {len(referencias_requeridas)} productos..."
+                st.session_state["_loading_text"] = "Obteniendo productos de Siigo..."
                 _render_loading("Descargando productos…")
 
                 resultado = obtener_todos_los_productos_siigo(
-                    st.session_state["token_siigo"],
-                    referencias_requeridas=(
-                        referencias_requeridas if referencias_requeridas else None
-                    ),
+                    st.session_state["token_siigo"]
                 )
                 if not resultado["success"]:
                     st.error(resultado["error"])
                     st.stop()
                 productos_siigo = resultado["data"]
                 total_obtenidos = resultado.get("total", len(productos_siigo))
-                
+
                 st.session_state["_loading_progress"] = 80
                 st.session_state["_loading_text"] = "Procesando datos..."
                 _render_loading("Procesando datos…")
-                
+
                 df_siigo = procesar_productos_siigo(productos_siigo)
                 st.session_state["_loading_progress"] = 95
                 st.session_state["_loading_text"] = "Guardando en caché..."
-                
+
                 st.session_state.update(
                     {
                         "df_siigo_cache": df_siigo,
