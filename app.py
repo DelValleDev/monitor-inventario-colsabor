@@ -503,6 +503,7 @@ def procesar_productos_siigo(productos: list) -> pd.DataFrame:
 def cruzar_inventarios(df_excel: pd.DataFrame, df_siigo: pd.DataFrame) -> pd.DataFrame:
     """
     Cruza los datos del Excel con los de Siigo y determina estado.
+    Primero intenta matcheo por referencia exacta, luego por nombre normalizado.
 
     Args:
         df_excel: DataFrame del Excel
@@ -511,10 +512,50 @@ def cruzar_inventarios(df_excel: pd.DataFrame, df_siigo: pd.DataFrame) -> pd.Dat
     Returns:
         pd.DataFrame: DataFrame con el cruce y estado
     """
-    # Realizar merge por referencia
+    # Realizar merge por referencia exacta (primero intento)
     df_cruzado = df_excel.merge(
         df_siigo, left_on="referencia", right_on="referencia_siigo", how="left"
     )
+
+    # Normalizar nombres para búsqueda secundaria
+    df_siigo_aux = df_siigo.copy()
+    df_siigo_aux["nombre_normalizado"] = (
+        df_siigo_aux["nombre_siigo"]
+        .astype(str)
+        .str.upper()
+        .str.strip()
+        .str.replace(r'\s+', ' ', regex=True)
+    )
+    
+    # Para productos no encontrados, intentar matcheo por nombre normalizado
+    no_encontrados_mask = df_cruzado["referencia_siigo"].isna()
+    if no_encontrados_mask.any():
+        df_cruzado["nombre_normalizado"] = (
+            df_cruzado["nombre"]
+            .astype(str)
+            .str.upper()
+            .str.strip()
+            .str.replace(r'\s+', ' ', regex=True)
+        )
+        
+        # Buscar matches por nombre para productos faltantes
+        for idx in df_cruzado[no_encontrados_mask].index:  # pragma: no cover
+            nombre_norm = df_cruzado.loc[idx, "nombre_normalizado"]  # pragma: no cover
+            match = df_siigo_aux[
+                df_siigo_aux["nombre_normalizado"] == nombre_norm
+            ]  # pragma: no cover
+            if len(match) > 0:  # pragma: no cover
+                # Usar el primer match encontrado
+                match_idx = match.index[0]  # pragma: no cover
+                df_cruzado.loc[idx, "referencia_siigo"] = df_siigo_aux.loc[  # pragma: no cover
+                    match_idx, "referencia_siigo"
+                ]  # pragma: no cover
+                df_cruzado.loc[idx, "nombre_siigo"] = df_siigo_aux.loc[  # pragma: no cover
+                    match_idx, "nombre_siigo"
+                ]  # pragma: no cover
+                df_cruzado.loc[idx, "stock_actual"] = df_siigo_aux.loc[  # pragma: no cover
+                    match_idx, "stock_actual"
+                ]  # pragma: no cover
 
     # Marcar productos no encontrados en Siigo
     df_cruzado["encontrado_en_siigo"] = df_cruzado["referencia_siigo"].notna()
@@ -1912,10 +1953,12 @@ letter-spacing:.12em">🔍 ESTADO CONEXIÓN SUPABASE</div>
         st.warning(
             f"⚠️ {no_encontrados} referencia(s) del inventario mínimo no encontradas en Siigo."
         )
-        with st.expander(f"📋 Ver {no_encontrados} referencias no encontradas", expanded=False):
-            df_no_encontradas = df_resultado[df_resultado["Estado"].str.contains("No encontrado")][
-                ["Referencia", "Nombre", "Mínimo (g)"]
-            ].reset_index(drop=True)
+        with st.expander(
+            f"📋 Ver {no_encontrados} referencias no encontradas", expanded=False
+        ):
+            df_no_encontradas = df_resultado[
+                df_resultado["Estado"].str.contains("No encontrado")
+            ][["Referencia", "Nombre", "Mínimo (g)"]].reset_index(drop=True)
             st.table(df_no_encontradas)
 
     # ── FILTROS ───────────────────────────────────────────────────────────────
