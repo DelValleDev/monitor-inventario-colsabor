@@ -16,10 +16,14 @@ import tomllib
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
-from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font, PatternFill
-from openpyxl.utils import get_column_letter
-from openpyxl.worksheet.table import Table, TableStyleInfo
+try:
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+    from openpyxl.worksheet.table import Table, TableStyleInfo
+    _OPENPYXL_OK = True
+except ImportError:  # pragma: no cover
+    _OPENPYXL_OK = False
 from supabase import create_client
 
 try:
@@ -758,7 +762,10 @@ def generar_excel_tabla_descarga(
     """
     Genera un .xlsx con tabla de Excel nativa (equivalente a Insertar > Tabla),
     encabezado con estilo y anchos de columna razonables.
+    Si openpyxl no está disponible retorna CSV plano como fallback.
     """
+    if not _OPENPYXL_OK:  # pragma: no cover
+        return df.to_csv(index=False).encode("utf-8")
     df_out = df.copy()
     wb = Workbook()
     ws = wb.active
@@ -2170,30 +2177,34 @@ letter-spacing:.12em">🔍 ESTADO CONEXIÓN SUPABASE</div>
 
     if len(df_faltantes) > 0:
         st.markdown('<div class="cs-section">📥 Exportar</div>', unsafe_allow_html=True)
+        _ts = now_colombia().strftime("%Y%m%d_%H%M")
+        _ext = "xlsx" if _OPENPYXL_OK else "csv"
+        _mime_xl = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        _mime_csv = "text/csv"
         dc1, dc2 = st.columns(2)
         with dc1:
             st.download_button(
-                "📥 Faltantes (Excel)",
+                f"📥 Faltantes ({_ext.upper()})",
                 data=generar_excel_tabla_descarga(
                     df_faltantes,
                     sheet_title="faltantes",
                     table_display_name="TablaFaltantes",
                 ),
-                file_name=f"faltantes_{now_colombia().strftime('%Y%m%d_%H%M')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                file_name=f"faltantes_{_ts}.{_ext}",
+                mime=_mime_xl if _OPENPYXL_OK else _mime_csv,
                 use_container_width=True,
                 key="download_faltantes_xlsx",
             )
         with dc2:
             st.download_button(
-                "📥 Inventario completo (Excel)",
+                f"📥 Inventario completo ({_ext.upper()})",
                 data=generar_excel_tabla_descarga(
                     df_resultado,
                     sheet_title="inventario",
                     table_display_name="TablaInventario",
                 ),
-                file_name=f"inventario_{now_colombia().strftime('%Y%m%d_%H%M')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                file_name=f"inventario_{_ts}.{_ext}",
+                mime=_mime_xl if _OPENPYXL_OK else _mime_csv,
                 use_container_width=True,
                 key="download_inventario_completo_xlsx",
             )
