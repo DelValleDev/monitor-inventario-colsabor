@@ -18,8 +18,10 @@ from supabase import create_client
 
 try:
     from inventory_monitor.loading_messages import get_greeting, get_random_message
+    from inventory_monitor import dane_survey
 except ModuleNotFoundError:  # pragma: no cover
     from loading_messages import get_greeting, get_random_message  # type: ignore[no-redef]  # pragma: no cover
+    import dane_survey  # type: ignore[no-redef]  # pragma: no cover
 
 # ── Debug logger (imprime en consola/terminal donde corre Streamlit) ──────────
 logging.basicConfig(
@@ -1721,7 +1723,29 @@ letter-spacing:.12em">🔍 ESTADO CONEXIÓN SUPABASE</div>
         unsafe_allow_html=True,
     )
 
-    _, nc1, nc2, nc3 = st.columns([6, 1, 1, 1])
+    current_page = st.session_state.get("current_page", "monitor")
+
+    nav1, nav2, _spacer, nc1, nc2, nc3 = st.columns([1.3, 1.9, 3.3, 1, 1, 1])
+    with nav1:
+        is_monitor = current_page == "monitor"
+        if is_monitor:
+            st.button("📦 Monitor", use_container_width=True, type="primary", key="nav_monitor")
+        else:
+            st.markdown('<div class="cs-btn-ghost">', unsafe_allow_html=True)
+            if st.button("📦 Monitor", use_container_width=True, key="nav_monitor"):
+                st.session_state["current_page"] = "monitor"
+                st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
+    with nav2:
+        is_dane = current_page == "dane"
+        if is_dane:
+            st.button("📊 Encuesta DANE", use_container_width=True, type="primary", key="nav_dane")
+        else:
+            st.markdown('<div class="cs-btn-ghost">', unsafe_allow_html=True)
+            if st.button("📊 Encuesta DANE", use_container_width=True, key="nav_dane"):
+                st.session_state["current_page"] = "dane"
+                st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
     with nc1:
         st.markdown('<div class="cs-btn-ghost">', unsafe_allow_html=True)
         if st.button(theme_icon, help="Cambiar tema", use_container_width=True):
@@ -1741,6 +1765,30 @@ letter-spacing:.12em">🔍 ESTADO CONEXIÓN SUPABASE</div>
                 del st.session_state[k]
             st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
+
+    # ── ENRUTAMIENTO DE PÁGINAS ───────────────────────────────────────────────
+    if current_page == "dane":
+        dane_survey.render_dane_survey()
+        # Footer
+        st.markdown(
+            """
+            <div style="
+              position:fixed;bottom:0;left:0;right:0;z-index:900;
+              padding:10px 24px;
+              background:var(--nav-bg);
+              border-top:1px solid var(--nav-border);
+              backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+              display:flex;align-items:center;justify-content:center;
+            ">
+              <p style="color:var(--text-muted);font-size:11px;letter-spacing:0.06em;
+                margin:0;font-family:'Inter',sans-serif;font-weight:500">
+                COLSABOR S.A.S &nbsp;·&nbsp; Encuesta DANE · DIAN Automator &nbsp;·&nbsp; © 2026
+              </p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.stop()
 
     # ── CARGA INVENTARIO MÍNIMO ───────────────────────────────────────────────
     needs_excel = (
