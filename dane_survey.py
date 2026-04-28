@@ -126,7 +126,20 @@ def _find_csv_files() -> tuple[Path | None, Path | None]:
     ventas_path: Path | None = None
     saldos_path: Path | None = None
 
-    # 1) Intento por nombre exacto (más estable)
+    # 1) Nombres cortos preferidos (facilita despliegue y adjuntos)
+    short_ventas = "ventas2025.csv"
+    short_saldos = "saldos31dic2025.csv"
+    for base in candidates:
+        v = base / short_ventas
+        s = base / short_saldos
+        if ventas_path is None and v.exists():
+            ventas_path = v
+        if saldos_path is None and s.exists():
+            saldos_path = s
+        if ventas_path and saldos_path:
+            return ventas_path, saldos_path
+
+    # 2) Nombres exactos exportados desde Siigo / Excel histórico
     exact_ventas = "Ventas por producto 2025 Colsabor - Sheet1.csv"
     exact_saldos = "Saldos de productos - 31-12-25.xlsx - Sheet1.csv"
     for base in candidates:
@@ -139,7 +152,7 @@ def _find_csv_files() -> tuple[Path | None, Path | None]:
         if ventas_path and saldos_path:
             return ventas_path, saldos_path
 
-    # 2) Intento por patrones
+    # 3) Intento por patrones
     for base in candidates:
         if ventas_path is None:
             hits = list(base.glob("Ventas*Colsabor*.csv"))
@@ -152,17 +165,21 @@ def _find_csv_files() -> tuple[Path | None, Path | None]:
         if ventas_path and saldos_path:
             break
 
-    # 3) Último intento recursivo en primer nivel de cada carpeta candidata
+    # 4) Último intento recursivo
     if ventas_path is None or saldos_path is None:
         for base in candidates:
             if ventas_path is None:
-                hits = list(base.rglob("Ventas*Colsabor*.csv"))
-                if hits:
-                    ventas_path = hits[0]
+                for pattern in ("ventas2025.csv", "Ventas*Colsabor*.csv"):
+                    hits = list(base.rglob(pattern))
+                    if hits:
+                        ventas_path = hits[0]
+                        break
             if saldos_path is None:
-                hits = list(base.rglob("Saldos*31-12*.csv"))
-                if hits:
-                    saldos_path = hits[0]
+                for pattern in ("saldos31dic2025.csv", "Saldos*31-12*.csv"):
+                    hits = list(base.rglob(pattern))
+                    if hits:
+                        saldos_path = hits[0]
+                        break
             if ventas_path and saldos_path:
                 break
 
@@ -438,7 +455,12 @@ def render_dane_survey() -> None:
 
     if not files_ok:
         st.info(
-            "Asegúrate de que los archivos estén en la raíz del proyecto:\n"
+            "Coloca los CSV en la carpeta del proyecto (o junto a `inventory_monitor/`) "
+            "con uno de estos nombres:\n\n"
+            "**Preferido (corto)**\n"
+            "- `ventas2025.csv`\n"
+            "- `saldos31dic2025.csv`\n\n"
+            "**También aceptados (export original)**\n"
             "- `Ventas por producto 2025 Colsabor - Sheet1.csv`\n"
             "- `Saldos de productos - 31-12-25.xlsx - Sheet1.csv`"
         )

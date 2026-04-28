@@ -3,6 +3,7 @@ Monitor de Inventario Inteligente - Colsabor
 Aplicación Streamlit para monitorear inventario conectado a Siigo API
 """
 
+import io
 import logging
 import sys
 import time
@@ -15,6 +16,10 @@ import tomllib
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.table import Table, TableStyleInfo
 from supabase import create_client
 
 try:
@@ -744,6 +749,61 @@ def generar_csv_descarga(df: pd.DataFrame) -> bytes:
     return df.to_csv(index=False).encode("utf-8")
 
 
+def generar_excel_tabla_descarga(
+    df: pd.DataFrame,
+    *,
+    sheet_title: str = "Datos",
+    table_display_name: str = "TablaInventario",
+) -> bytes:
+    """
+    Genera un .xlsx con tabla de Excel nativa (equivalente a Insertar > Tabla),
+    encabezado con estilo y anchos de columna razonables.
+    """
+    df_out = df.copy()
+    wb = Workbook()
+    ws = wb.active
+    safe_title = sheet_title[:31].replace("/", "-")
+    ws.title = safe_title
+
+    nrows, ncols = len(df_out) + 1, max(1, len(df_out.columns))
+    header_fill = PatternFill("solid", fgColor="1F6F4F")
+    header_font = Font(color="FFFFFF", bold=True)
+    thin_align = Alignment(vertical="center", wrap_text=True)
+
+    for col_idx, col_name in enumerate(df_out.columns, 1):
+        cell = ws.cell(row=1, column=col_idx, value=str(col_name))
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = thin_align
+
+    for r, row in enumerate(df_out.itertuples(index=False), 2):
+        for c, val in enumerate(row, 1):
+            ws.cell(row=r, column=c, value=val)
+
+    last_col = get_column_letter(ncols)
+    last_row = len(df_out) + 1
+    tab_ref = f"A1:{last_col}{last_row}"
+    tab = Table(displayName=table_display_name[:255], ref=tab_ref)
+    tab.tableStyleInfo = TableStyleInfo(
+        name="TableStyleMedium9",
+        showFirstColumn=False,
+        showLastColumn=False,
+        showRowStripes=True,
+        showColumnStripes=False,
+    )
+    ws.add_table(tab)
+
+    for i, col in enumerate(df_out.columns, 1):
+        letter = get_column_letter(i)
+        sample = [str(col)] + [str(x) for x in df_out.iloc[:, i - 1].head(50).tolist()]
+        w = min(48, max(10, max(len(s) for s in sample) + 2))
+        ws.column_dimensions[letter].width = w
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
 # ============================================================================
 # INTERFAZ PRINCIPAL
 # ============================================================================
@@ -791,8 +851,8 @@ _VARS_DARK = """
   --border-subtle: rgba(37,99,235,0.16);
   --border-strong: rgba(59,130,246,0.28);
   --text-primary: #f0f6ff;
-  --text-secondary: #94a3b8;
-  --text-muted: #475569;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
     --placeholder-color: #94a3b8;
   --accent: #3b82f6;
   --accent-hover: #60a5fa;
@@ -823,6 +883,7 @@ _MAIN_CSS = (
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
 <style>
 :root {"""
     + _VARS_LIGHT
@@ -989,10 +1050,7 @@ label[data-baseweb="form-control-label"] { color: var(--text-secondary) !importa
   font-size: 12px !important;
   font-weight: 600 !important;
   padding: 10px 14px !important;
-}
-[data-testid="stExpander"] > details > summary::marker,
-[data-testid="stExpander"] > details > summary::-webkit-details-marker {
-  display: none !important;
+  list-style-position: outside !important;
 }
 [data-testid="stExpander"] > details[open] > summary {
   border-bottom: 1px solid var(--border-subtle) !important;
@@ -1002,10 +1060,28 @@ label[data-baseweb="form-control-label"] { color: var(--text-secondary) !importa
   border: none !important;
   border-radius: 0 !important;
 }
+/* Iconos Material del expander (evita texto tipo _arrow_right si falla la fuente) */
+[data-testid="stExpander"] summary .material-symbols-outlined,
+[data-testid="stExpander"] summary span[class*="material-symbols"] {
+  font-family: 'Material Symbols Outlined' !important;
+  font-size: 18px !important;
+  font-weight: normal !important;
+  vertical-align: middle !important;
+  color: var(--text-secondary) !important;
+}
 
 /* ── Alerts ──────────────────────────────────────────────────────── */
 .stSuccess, .stInfo, .stWarning, .stError { border-radius: 12px !important; font-size: 13px !important; font-family: 'Inter', sans-serif !important; }
-.stCaption { color: var(--text-muted) !important; font-size: 11px !important; font-family: 'Inter', sans-serif !important; }
+.stCaption { color: var(--text-secondary) !important; font-size: 12px !important; font-family: 'Inter', sans-serif !important; opacity: 0.95 !important; }
+
+/* Texto auxiliar bajo exportar (mejor contraste en oscuro) */
+.cs-export-stats {
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+}
 
 /* ── Animations ──────────────────────────────────────────────────── */
 @keyframes cs-rise { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
@@ -2097,24 +2173,33 @@ letter-spacing:.12em">🔍 ESTADO CONEXIÓN SUPABASE</div>
         dc1, dc2 = st.columns(2)
         with dc1:
             st.download_button(
-                "📥 Faltantes (CSV)",
-                data=generar_csv_descarga(df_faltantes),
-                file_name=f"faltantes_{now_colombia().strftime('%Y%m%d_%H%M')}.csv",
-                mime="text/csv",
+                "📥 Faltantes (Excel)",
+                data=generar_excel_tabla_descarga(
+                    df_faltantes,
+                    sheet_title="faltantes",
+                    table_display_name="TablaFaltantes",
+                ),
+                file_name=f"faltantes_{now_colombia().strftime('%Y%m%d_%H%M')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
-                key="download_faltantes_csv",
+                key="download_faltantes_xlsx",
             )
         with dc2:
             st.download_button(
-                "📥 Inventario Completo (CSV)",
-                data=generar_csv_descarga(df_resultado),
-                file_name=f"inventario_{now_colombia().strftime('%Y%m%d_%H%M')}.csv",
-                mime="text/csv",
+                "📥 Inventario completo (Excel)",
+                data=generar_excel_tabla_descarga(
+                    df_resultado,
+                    sheet_title="inventario",
+                    table_display_name="TablaInventario",
+                ),
+                file_name=f"inventario_{now_colombia().strftime('%Y%m%d_%H%M')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
-                key="download_inventario_completo_csv",
+                key="download_inventario_completo_xlsx",
             )
-        st.caption(
-            f"🔴 {criticos} crítico(s) · 🟡 {bajos} bajo(s) · 📦 {total} referencias totales"
+        st.markdown(
+            f'<div class="cs-export-stats">🔴 {criticos} crítico(s) · 🟡 {bajos} bajo(s) · 📦 {total} referencias totales</div>',
+            unsafe_allow_html=True,
         )
     else:
         st.success("🎉 ¡Excelente! No hay productos con stock crítico o bajo.")
