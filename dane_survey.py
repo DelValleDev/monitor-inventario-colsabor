@@ -202,44 +202,77 @@ def _clean_number(val: str | float) -> float:
         return 0.0
 
 
+def _parse_ventas(src: "str | object") -> pd.DataFrame:
+    """Parsea el CSV de ventas desde ruta (str) o file-like object."""
+    df = pd.read_csv(
+        src,
+        skiprows=7,
+        header=0,
+        encoding="utf-8",
+        dtype=str,
+        on_bad_lines="skip",
+    )
+    if df.shape[1] < 8:
+        return pd.DataFrame()
+
+    df.columns = [
+        "codigo", "nombre", "ref_fabrica", "grupo",
+        "cant_vendida", "valor_bruto", "descuento", "subtotal",
+        "imp_cargo", "imp_retencion", "total",
+    ] + [f"_extra_{i}" for i in range(df.shape[1] - 11)]
+
+    grupos_validos = {"MATERIAS PRIMAS", "PRODUCTO TERMINADO", "MERCANCIAS"}
+    df["grupo"] = df["grupo"].astype(str).str.strip().str.upper()
+    df = df[df["grupo"].isin(grupos_validos)].copy()
+
+    df["codigo"] = df["codigo"].astype(str).str.strip()
+    df["nombre"] = df["nombre"].astype(str).str.strip()
+    df["cant_vendida"] = df["cant_vendida"].apply(_clean_number)
+    df["subtotal"] = df["subtotal"].apply(_clean_number)
+    return df[df["codigo"] != ""].reset_index(drop=True)
+
+
+def _parse_saldos(src: "str | object") -> pd.DataFrame:
+    """Parsea el CSV de saldos desde ruta (str) o file-like object."""
+    df_raw = pd.read_csv(
+        src,
+        skiprows=7,
+        header=0,
+        encoding="utf-8",
+        dtype=str,
+        on_bad_lines="skip",
+    )
+    if df_raw.shape[1] < 4:
+        return pd.DataFrame()
+
+    df_raw.columns = ["codigo", "nombre", "referencia", "saldo"] + [
+        f"_extra_{i}" for i in range(df_raw.shape[1] - 4)
+    ]
+
+    cod_col = df_raw["codigo"].astype(str).str.strip()
+    mask = (
+        (cod_col.str.len() > 0)
+        & ~cod_col.str.startswith("Producto:")
+        & ~cod_col.str.startswith("Bodega:")
+        & ~cod_col.str.upper().str.startswith("TOTAL")
+        & ~cod_col.str.upper().str.startswith("CODIGO")
+        & cod_col.notna()
+    )
+    df = df_raw[mask].copy()
+    df["codigo"] = df["codigo"].astype(str).str.strip()
+    df["nombre"] = df["nombre"].astype(str).str.strip()
+    df["saldo"] = df["saldo"].apply(_clean_number)
+    return df.groupby(["codigo", "nombre"], as_index=False)["saldo"].sum()
+
+
 @st.cache_data(show_spinner=False)
 def cargar_ventas(filepath: str) -> pd.DataFrame:
     """
-    Carga el CSV de ventas.
+    Carga el CSV de ventas desde ruta en disco (cacheado).
     Estructura: 7 filas de cabecera metadata, fila 8 = columnas.
     """
     try:
-        df = pd.read_csv(
-            filepath,
-            skiprows=7,
-            header=0,
-            encoding="utf-8",
-            dtype=str,
-            on_bad_lines="skip",
-        )
-        if df.shape[1] < 8:
-            st.error("El archivo de ventas no tiene el formato esperado.")
-            return pd.DataFrame()
-
-        df.columns = [
-            "codigo", "nombre", "ref_fabrica", "grupo",
-            "cant_vendida", "valor_bruto", "descuento", "subtotal",
-            "imp_cargo", "imp_retencion", "total",
-        ] + [f"_extra_{i}" for i in range(df.shape[1] - 11)]
-
-        # Limpiar: solo filas con código y grupo de inventario válidos
-        grupos_validos = {"MATERIAS PRIMAS", "PRODUCTO TERMINADO", "MERCANCIAS"}
-        df["grupo"] = df["grupo"].astype(str).str.strip().str.upper()
-        df = df[df["grupo"].isin(grupos_validos)].copy()
-
-        df["codigo"] = df["codigo"].astype(str).str.strip()
-        df["nombre"] = df["nombre"].astype(str).str.strip()
-        df["cant_vendida"] = df["cant_vendida"].apply(_clean_number)
-        df["subtotal"] = df["subtotal"].apply(_clean_number)
-
-        df = df[df["codigo"] != ""].reset_index(drop=True)
-        return df
-
+        return _parse_ventas(filepath)
     except Exception as exc:
         st.error(f"Error cargando archivo de ventas: {exc}")
         return pd.DataFrame()
@@ -248,54 +281,12 @@ def cargar_ventas(filepath: str) -> pd.DataFrame:
 @st.cache_data(show_spinner=False)
 def cargar_saldos(filepath: str) -> pd.DataFrame:
     """
-    Carga el CSV de saldos al 31-dic.
+    Carga el CSV de saldos al 31-dic desde ruta en disco (cacheado).
     Formato complejo: filas 'Producto:' y 'Bodega:' intercaladas con datos reales.
     Se filtran y agrupa por código (suma de todas las bodegas).
     """
     try:
-        df_raw = pd.read_csv(
-            filepath,
-            skiprows=7,
-            header=0,
-            encoding="utf-8",
-            dtype=str,
-            on_bad_lines="skip",
-        )
-        if df_raw.shape[1] < 4:
-            st.error("El archivo de saldos no tiene el formato esperado.")
-            return pd.DataFrame()
-
-        # Normalizar nombres de columnas
-        df_raw.columns = ["codigo", "nombre", "referencia", "saldo"] + [
-            f"_extra_{i}" for i in range(df_raw.shape[1] - 4)
-        ]
-
-        cod_col = df_raw["codigo"].astype(str).str.strip()
-
-        # Conservar solo filas de datos reales (excluir encabezados de grupo).
-        # Cada condición va entre paréntesis para que & no absorba el >.
-        mask = (
-            (cod_col.str.len() > 0)
-            & ~cod_col.str.startswith("Producto:")
-            & ~cod_col.str.startswith("Bodega:")
-            & ~cod_col.str.upper().str.startswith("TOTAL")
-            & ~cod_col.str.upper().str.startswith("CODIGO")
-            & cod_col.notna()
-        )
-        df = df_raw[mask].copy()
-
-        df["codigo"] = df["codigo"].astype(str).str.strip()
-        df["nombre"] = df["nombre"].astype(str).str.strip()
-        df["saldo"] = df["saldo"].apply(_clean_number)
-
-        # Sumar por código (múltiples bodegas)
-        df_grp = (
-            df.groupby(["codigo", "nombre"], as_index=False)["saldo"]
-            .sum()
-        )
-
-        return df_grp
-
+        return _parse_saldos(filepath)
     except Exception as exc:
         st.error(f"Error cargando archivo de saldos: {exc}")
         return pd.DataFrame()
@@ -442,40 +433,94 @@ def render_dane_survey() -> None:
         unsafe_allow_html=True,
     )
 
-    # ── Buscar archivos CSV ───────────────────────────────────────────────
+    # ── Panel de diagnóstico / carga de archivos ──────────────────────────
+    logs: list[tuple[str, str]] = []   # (icon, mensaje)
+
     ventas_path, saldos_path = _find_csv_files()
+    logs.append(("🔍", f"Ruta de ejecución: `{Path.cwd()}`"))
 
-    files_ok = True
-    if ventas_path is None:
-        st.error("No se encontró el archivo de Ventas por producto 2025.")
-        files_ok = False
-    if saldos_path is None:
-        st.error("No se encontró el archivo de Saldos al 31-dic.")
-        files_ok = False
+    uploaded_ventas = uploaded_saldos = None
 
+    if ventas_path:
+        logs.append(("✅", f"Ventas encontrado: `{ventas_path.name}`"))
+    else:
+        logs.append(("❌", "Ventas **no encontrado** en rutas candidatas"))
+
+    if saldos_path:
+        logs.append(("✅", f"Saldos encontrado: `{saldos_path.name}`"))
+    else:
+        logs.append(("❌", "Saldos **no encontrado** en rutas candidatas"))
+
+    files_ok = ventas_path is not None and saldos_path is not None
+
+    # Si algún CSV falta, mostrar cargador manual (útil en Streamlit Cloud)
     if not files_ok:
-        st.info(
-            "Coloca los CSV en la carpeta del proyecto (o junto a `inventory_monitor/`) "
-            "con uno de estos nombres:\n\n"
-            "**Preferido (corto)**\n"
-            "- `ventas2025.csv`\n"
-            "- `saldos31dic2025.csv`\n\n"
-            "**También aceptados (export original)**\n"
-            "- `Ventas por producto 2025 Colsabor - Sheet1.csv`\n"
-            "- `Saldos de productos - 31-12-25.xlsx - Sheet1.csv`"
-        )
-        st.caption(
-            f"Ruta actual de ejecución: `{Path.cwd()}`"
-        )
-        return
-    st.caption(
-        f"Archivos cargados: `{ventas_path.name}` y `{saldos_path.name}`"
-    )
+        with st.expander("📁 Diagnóstico y carga manual de archivos", expanded=True):
+            _log_html = "".join(
+                f"<div>{icon} {msg}</div>" for icon, msg in logs
+            )
+            st.markdown(
+                f"""<div style="padding:10px 14px;border-radius:10px;
+                background:rgba(0,0,0,0.30);border:1px solid rgba(99,102,241,0.25);
+                font-family:'JetBrains Mono',monospace;font-size:11px;line-height:2;
+                color:#cbd5e1;margin-bottom:14px;">{_log_html}</div>""",
+                unsafe_allow_html=True,
+            )
+            st.info(
+                "**En Streamlit Cloud** los archivos no están en disco. "
+                "Súbelos aquí directamente:\n\n"
+                "- `ventas2025.csv` (export de Ventas por producto)\n"
+                "- `saldos31dic2025.csv` (export de Saldos al 31-dic)"
+            )
+            col_u1, col_u2 = st.columns(2)
+            with col_u1:
+                uploaded_ventas = st.file_uploader(
+                    "📤 Ventas 2025 (CSV)",
+                    type=["csv"],
+                    key="upload_ventas_dane",
+                )
+            with col_u2:
+                uploaded_saldos = st.file_uploader(
+                    "📤 Saldos 31-dic (CSV)",
+                    type=["csv"],
+                    key="upload_saldos_dane",
+                )
+
+        if uploaded_ventas is None or uploaded_saldos is None:
+            return
+        # Usar buffers subidos
+        logs.append(("📤", "Usando archivos subidos manualmente"))
+        files_ok = True
+    else:
+        with st.expander("📊 Diagnóstico de archivos", expanded=False):
+            _log_html = "".join(
+                f"<div>{icon} {msg}</div>" for icon, msg in logs
+            )
+            st.markdown(
+                f"""<div style="padding:10px 14px;border-radius:10px;
+                background:rgba(0,0,0,0.20);border:1px solid rgba(99,102,241,0.18);
+                font-family:'JetBrains Mono',monospace;font-size:11px;line-height:2;
+                color:#cbd5e1;">{_log_html}</div>""",
+                unsafe_allow_html=True,
+            )
 
     # ── Carga de datos ────────────────────────────────────────────────────
+    import io as _io
     with st.spinner("Cargando y clasificando productos…"):
-        df_ventas = cargar_ventas(str(ventas_path))
-        df_saldos = cargar_saldos(str(saldos_path))
+        if uploaded_ventas is not None:
+            try:
+                df_ventas = _parse_ventas(
+                    _io.StringIO(uploaded_ventas.getvalue().decode("utf-8", errors="replace"))
+                )
+                df_saldos = _parse_saldos(
+                    _io.StringIO(uploaded_saldos.getvalue().decode("utf-8", errors="replace"))
+                )
+            except Exception as _exc:
+                st.error(f"Error procesando archivos subidos: {_exc}")
+                return
+        else:
+            df_ventas = cargar_ventas(str(ventas_path))
+            df_saldos = cargar_saldos(str(saldos_path))
 
     if df_ventas.empty and df_saldos.empty:
         st.warning("No se pudieron cargar los datos de ninguno de los dos archivos.")
@@ -487,10 +532,7 @@ def render_dane_survey() -> None:
     total_v = len(df_v_detail)
     clasificados_v = int(df_v_detail["dian_codigo"].notna().sum())
     sin_v = total_v - clasificados_v
-
     total_s = len(df_s_detail)
-    clasificados_s = int(df_s_detail["dian_codigo"].notna().sum())
-    sin_s = total_s - clasificados_s
 
     st.markdown(
         f"""
@@ -524,7 +566,7 @@ def render_dane_survey() -> None:
         unsafe_allow_html=True,
     )
 
-    # ── Tabla principal DIAN ──────────────────────────────────────────────
+    # ── Tabla principal DIAN con totales ──────────────────────────────────
     st.markdown(
         '<div class="cs-section">📋 Tabla DIAN – Encuesta de Producción</div>',
         unsafe_allow_html=True,
@@ -532,21 +574,34 @@ def render_dane_survey() -> None:
     st.markdown(
         '<div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">'
         '⚠️ <b>Cant. producida</b> y <b>Valor Producción</b> requieren datos de producción interna '
-        '(no disponibles en los CSVs cargados). Las demás columnas se calcularon automáticamente.'
+        "(no disponibles en los CSVs cargados). Las demás columnas se calcularon automáticamente."
         "</div>",
         unsafe_allow_html=True,
     )
 
-    # Formato visual de la tabla
     def _fmt_num(v: float) -> str:
-        if v == 0:
-            return "–"
-        return f"{v:,.2f}"
+        return "–" if v == 0 else f"{v:,.2f}"
 
     def _fmt_cop(v: float) -> str:
-        if v == 0:
-            return "–"
-        return f"$ {v:,.0f}"
+        return "–" if v == 0 else f"$ {v:,.0f}"
+
+    # Fila de TOTALES
+    total_cant_v = df_dian["Cant. vendida"].sum()
+    total_valor_v = df_dian["Valor vtas. tot."].sum()
+    total_exis = df_dian["Cant. exis. 31 dic."].sum()
+    vu_global = total_valor_v / total_cant_v if total_cant_v > 0 else 0.0
+
+    totals_row = {
+        "Código DIAN": "TOTAL",
+        "Producto": "─── SUMA TODAS LAS CATEGORÍAS ───",
+        "Cant. producida": _fmt_num(0),
+        "Valor Producción": _fmt_cop(0),
+        "Cant. vendida": _fmt_num(total_cant_v),
+        "V/U. de venta": _fmt_cop(vu_global),
+        "Valor vtas. tot.": _fmt_cop(total_valor_v),
+        "Valor vtas. ext.": _fmt_cop(0),
+        "Cant. exis. 31 dic.": _fmt_num(total_exis),
+    }
 
     df_display = df_dian.copy()
     df_display["Cant. producida"] = df_display["Cant. producida"].apply(_fmt_num)
@@ -557,11 +612,16 @@ def render_dane_survey() -> None:
     df_display["Valor vtas. ext."] = df_display["Valor vtas. ext."].apply(_fmt_cop)
     df_display["Cant. exis. 31 dic."] = df_display["Cant. exis. 31 dic."].apply(_fmt_num)
 
+    import pandas as _pd
+    df_display = _pd.concat(
+        [df_display, _pd.DataFrame([totals_row])], ignore_index=True
+    )
+
     st.dataframe(
         df_display,
         use_container_width=True,
         hide_index=True,
-        height=420,
+        height=430,
         column_config={
             "Código DIAN": st.column_config.TextColumn("Cód. DIAN", width="small"),
             "Producto": st.column_config.TextColumn("Categoría DIAN", width="medium"),
@@ -584,14 +644,15 @@ def render_dane_survey() -> None:
         mime="text/csv",
     )
 
-    # ── Desglose por categoría ────────────────────────────────────────────
+    # ── Desglose por categoría con totales + promedio ─────────────────────
     st.markdown(
         '<div class="cs-section">🔍 Desglose por categoría</div>',
         unsafe_allow_html=True,
     )
     st.markdown(
         '<div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;">'
-        "Expande cada categoría para ver los productos que la componen."
+        "Expande cada categoría para ver cómo aportaron sus productos al total "
+        "y cómo se calculó el V/U promedio ponderado."
         "</div>",
         unsafe_allow_html=True,
     )
@@ -602,43 +663,92 @@ def render_dane_survey() -> None:
         v_cat = df_v_detail[df_v_detail["dian_codigo"] == cod]
         s_cat = df_s_detail[df_s_detail["dian_codigo"] == cod]
 
-        n_prod_v = len(v_cat)
-        n_prod_s = len(s_cat)
+        # Totales de la categoría
+        cat_cant = float(v_cat["cant_vendida"].sum()) if not v_cat.empty else 0.0
+        cat_valor = float(v_cat["subtotal"].sum()) if not v_cat.empty else 0.0
+        cat_exis = float(s_cat["saldo"].sum()) if not s_cat.empty else 0.0
+        cat_vu = cat_valor / cat_cant if cat_cant > 0 else 0.0
 
-        with st.expander(
-            f"{cat['nombre']} · {cat['codigo']} — {n_prod_v} SKU(s) en ventas · {n_prod_s} SKU(s) en saldos"
-        ):
+        # Contribución al total global
+        pct_valor = (cat_valor / total_valor_v * 100) if total_valor_v > 0 else 0.0
+        pct_cant = (cat_cant / total_cant_v * 100) if total_cant_v > 0 else 0.0
+
+        label = (
+            f"{cat['nombre']}  ·  {cod}"
+            f"  |  Ventas: {_fmt_cop(cat_valor)} ({pct_valor:.1f}%)"
+            f"  |  Cant.: {_fmt_num(cat_cant)}"
+            f"  |  Exis.: {_fmt_num(cat_exis)}"
+        )
+
+        with st.expander(label):
+            # Resumen de la categoría
+            r1, r2, r3, r4 = st.columns(4)
+            with r1:
+                st.metric("Cant. vendida total", f"{cat_cant:,.2f}")
+            with r2:
+                st.metric("Valor vtas. total", f"$ {cat_valor:,.0f}")
+            with r3:
+                st.metric("V/U prom. ponderado", f"$ {cat_vu:,.0f}")
+            with r4:
+                st.metric("Exis. 31-dic", f"{cat_exis:,.2f}")
+
+            st.markdown(
+                f'<div style="font-size:11px;color:var(--text-muted);margin:4px 0 10px;">'
+                f"Aporta el <b>{pct_valor:.1f}%</b> del valor total de ventas y el "
+                f"<b>{pct_cant:.1f}%</b> de la cantidad vendida.<br>"
+                f"<b>V/U ponderado</b> = Valor vtas. categoría ÷ Cant. vendida categoría = "
+                f"$ {cat_valor:,.0f} ÷ {cat_cant:,.2f} = <b>$ {cat_vu:,.0f}</b>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
             st.markdown(
                 f'<span style="font-size:11px;color:var(--text-muted);">'
                 f'Regla de clasificación: <i>{cat["descripcion"]}</i></span>',
                 unsafe_allow_html=True,
             )
+
             tabs = st.tabs(["Ventas 2025", "Saldos 31-dic"])
 
             with tabs[0]:
                 if v_cat.empty:
                     st.info("Sin ventas registradas en esta categoría.")
                 else:
-                    cols_v = ["codigo", "nombre", "grupo", "cant_vendida", "subtotal"]
-                    df_v_show = v_cat[cols_v].copy()
-                    df_v_show.columns = [
-                        "Código", "Nombre", "Grupo", "Cant. vendida", "Subtotal ($)"
-                    ]
-                    df_v_show["Cant. vendida"] = df_v_show["Cant. vendida"].apply(
-                        lambda x: f"{x:,.2f}"
-                    )
+                    df_v_show = v_cat[["codigo", "nombre", "cant_vendida", "subtotal"]].copy()
+                    df_v_show.columns = ["Código", "Nombre", "Cant. vendida", "Subtotal ($)"]
+                    tot_cat = df_v_show["Cant. vendida"].sum()
+                    val_cat = df_v_show["Subtotal ($)"].sum()
+                    df_v_show["% de cant."] = (
+                        df_v_show["Cant. vendida"] / tot_cat * 100
+                        if tot_cat > 0 else 0.0
+                    ).apply(lambda x: f"{x:.1f}%")
+                    df_v_show["V/U ($)"] = (
+                        df_v_show["Subtotal ($)"] / df_v_show["Cant. vendida"]
+                    ).apply(lambda x: f"$ {x:,.0f}" if x > 0 else "–")
                     df_v_show["Subtotal ($)"] = df_v_show["Subtotal ($)"].apply(
                         lambda x: f"$ {x:,.0f}"
                     )
+                    df_v_show["Cant. vendida"] = df_v_show["Cant. vendida"].apply(
+                        lambda x: f"{x:,.2f}"
+                    )
                     st.dataframe(df_v_show, use_container_width=True, hide_index=True)
+                    st.caption(
+                        f"Promedio ponderado = Σ Subtotal ÷ Σ Cant. = "
+                        f"$ {val_cat:,.0f} ÷ {tot_cat:,.2f} = "
+                        f"$ {val_cat/tot_cat:,.0f}" if tot_cat > 0 else ""
+                    )
 
             with tabs[1]:
                 if s_cat.empty:
                     st.info("Sin existencias al 31-dic en esta categoría.")
                 else:
-                    cols_s = ["codigo", "nombre", "saldo"]
-                    df_s_show = s_cat[cols_s].copy()
+                    df_s_show = s_cat[["codigo", "nombre", "saldo"]].copy()
                     df_s_show.columns = ["Código", "Nombre", "Saldo (uds.)"]
+                    tot_s = df_s_show["Saldo (uds.)"].sum()
+                    df_s_show["% del total cat."] = (
+                        df_s_show["Saldo (uds.)"] / tot_s * 100
+                        if tot_s > 0 else 0.0
+                    ).apply(lambda x: f"{x:.1f}%")
                     df_s_show["Saldo (uds.)"] = df_s_show["Saldo (uds.)"].apply(
                         lambda x: f"{x:,.2f}"
                     )
@@ -653,45 +763,22 @@ def render_dane_survey() -> None:
             '<div class="cs-section">⚠️ Productos sin clasificar</div>',
             unsafe_allow_html=True,
         )
-        st.markdown(
-            '<div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;">'
-            "Estos productos no coincidieron con ninguna regla de clasificación. "
-            "Revisa si necesitan agregarse a las categorías DIAN o si corresponden "
-            "a materias primas que no reportan en la encuesta."
-            "</div>",
-            unsafe_allow_html=True,
-        )
-
         sc1, sc2 = st.columns(2)
-
         with sc1:
-            st.markdown(
-                f"**Sin clasificar en Ventas** ({len(df_v_sin)} SKUs)",
-                unsafe_allow_html=True,
-            )
+            st.markdown(f"**Sin clasificar en Ventas** ({len(df_v_sin)} SKUs)")
             if not df_v_sin.empty:
-                cols_vs = ["codigo", "nombre", "grupo", "cant_vendida", "subtotal"]
-                df_vs_show = df_v_sin[cols_vs].copy()
-                df_vs_show.columns = ["Código", "Nombre", "Grupo", "Cant.", "Subtotal ($)"]
-                df_vs_show["Cant."] = df_vs_show["Cant."].apply(lambda x: f"{x:,.2f}")
-                df_vs_show["Subtotal ($)"] = df_vs_show["Subtotal ($)"].apply(
-                    lambda x: f"$ {x:,.0f}"
-                )
-                st.dataframe(df_vs_show, use_container_width=True, hide_index=True)
-
+                df_vs = df_v_sin[["codigo", "nombre", "cant_vendida", "subtotal"]].copy()
+                df_vs.columns = ["Código", "Nombre", "Cant.", "Subtotal ($)"]
+                df_vs["Subtotal ($)"] = df_vs["Subtotal ($)"].apply(lambda x: f"$ {x:,.0f}")
+                df_vs["Cant."] = df_vs["Cant."].apply(lambda x: f"{x:,.2f}")
+                st.dataframe(df_vs, use_container_width=True, hide_index=True)
         with sc2:
-            st.markdown(
-                f"**Sin clasificar en Saldos** ({len(df_s_sin)} SKUs)",
-                unsafe_allow_html=True,
-            )
+            st.markdown(f"**Sin clasificar en Saldos** ({len(df_s_sin)} SKUs)")
             if not df_s_sin.empty:
-                cols_ss = ["codigo", "nombre", "saldo"]
-                df_ss_show = df_s_sin[cols_ss].copy()
-                df_ss_show.columns = ["Código", "Nombre", "Saldo (uds.)"]
-                df_ss_show["Saldo (uds.)"] = df_ss_show["Saldo (uds.)"].apply(
-                    lambda x: f"{x:,.2f}"
-                )
-                st.dataframe(df_ss_show, use_container_width=True, hide_index=True)
+                df_ss = df_s_sin[["codigo", "nombre", "saldo"]].copy()
+                df_ss.columns = ["Código", "Nombre", "Saldo (uds.)"]
+                df_ss["Saldo (uds.)"] = df_ss["Saldo (uds.)"].apply(lambda x: f"{x:,.2f}")
+                st.dataframe(df_ss, use_container_width=True, hide_index=True)
 
     # ── Nota de producción ─────────────────────────────────────────────────
     st.markdown(

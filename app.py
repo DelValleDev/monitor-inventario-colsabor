@@ -1770,6 +1770,26 @@ def main():
                 _status_src = (
                     "☁️ Streamlit Cloud" if _secrets_ok else "📦 Fallback interno"
                 )
+                # ── Panel de estado de dependencias ──────────────────────
+                def _chk_import(pkg: str) -> str:
+                    try:
+                        __import__(pkg)
+                        return "✅"
+                    except ImportError:
+                        return "❌"
+
+                _deps = [
+                    ("streamlit", "streamlit"),
+                    ("pandas", "pandas"),
+                    ("openpyxl", "openpyxl"),
+                    ("requests", "requests"),
+                    ("plotly", "plotly"),
+                    ("supabase", "supabase"),
+                ]
+                _dep_rows = "".join(
+                    f"<div>{_chk_import(pkg)}&nbsp;<span style='color:#cbd5e1'>{label}</span></div>"
+                    for label, pkg in _deps
+                )
                 st.markdown(
                     f"""
 <div style="margin-top:16px;padding:12px 14px;border-radius:12px;
@@ -1781,6 +1801,9 @@ letter-spacing:.12em">🔍 ESTADO CONEXIÓN SUPABASE</div>
 <div>URL &nbsp;&nbsp;&nbsp;&nbsp;→ <span style="color:#e2e8f0">{_status_url}</span></div>
 <div>API KEY → <span style="color:#e2e8f0">{_status_key}</span></div>
 <div>Fuente &nbsp;→ <span style="color:#e2e8f0">{_status_src}</span></div>
+<div style="color:#60a5fa;font-weight:700;margin:10px 0 6px;font-size:10px;
+letter-spacing:.12em">📦 DEPENDENCIAS INSTALADAS</div>
+{_dep_rows}
 </div>""",
                     unsafe_allow_html=True,
                 )
