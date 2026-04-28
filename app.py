@@ -14,6 +14,7 @@ import base64
 import tomllib
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 from supabase import create_client
 
 try:
@@ -126,6 +127,12 @@ _log.debug(
 # Nombres de las tablas en Supabase
 TABLE_INVENTARIO = "user_inventory"
 TABLE_SIIGO_CACHE = "siigo_products_cache"
+COL_TZ = ZoneInfo("America/Bogota")
+
+
+def now_colombia() -> datetime:
+    """Retorna fecha/hora actual en zona horaria de Colombia."""
+    return datetime.now(COL_TZ)
 
 # ============================================================================
 # USUARIOS AUTORIZADOS (whitelist)
@@ -320,7 +327,7 @@ def guardar_inventario_excel(usuario_email: str, df_excel: pd.DataFrame):
         data_to_insert = {
             "usuario_email": usuario_email,
             "data": records,
-            "updated_at": datetime.now().isoformat(),
+            "updated_at": now_colombia().isoformat(),
         }
 
         supabase.table(TABLE_INVENTARIO).upsert(
@@ -372,7 +379,7 @@ def guardar_productos_siigo(productos_siigo: list):
         data_to_insert = {
             "id": 1,
             "data": productos_siigo,
-            "updated_at": datetime.now().isoformat(),
+            "updated_at": now_colombia().isoformat(),
         }
 
         supabase.table(TABLE_SIIGO_CACHE).upsert(
@@ -397,15 +404,16 @@ def cargar_productos_siigo_guardados():
 
         row = response.data[0]
 
-        updated_at_str = row["updated_at"]
+        updated_at_str = str(row["updated_at"])
         if updated_at_str.endswith("Z"):
-            updated_at_str = updated_at_str[:-1]
+            updated_at_str = updated_at_str.replace("Z", "+00:00")
 
         updated_at = datetime.fromisoformat(updated_at_str)
-        if updated_at.tzinfo is not None:
-            updated_at = updated_at.replace(tzinfo=None)
+        if updated_at.tzinfo is None:
+            updated_at = updated_at.replace(tzinfo=COL_TZ)
+        updated_at = updated_at.astimezone(COL_TZ)
 
-        horas_transcurridas = (datetime.now() - updated_at).total_seconds() / 3600
+        horas_transcurridas = (now_colombia() - updated_at).total_seconds() / 3600
         if horas_transcurridas > 24:
             return None
 
@@ -620,7 +628,7 @@ def generar_html_impresion(df: pd.DataFrame, titulo: str = "Lista de Faltantes")
     Returns:
         str: HTML formateado
     """
-    fecha_actual = datetime.now().strftime("%d/%m/%Y %H:%M")
+    fecha_actual = now_colombia().strftime("%d/%m/%Y %H:%M")
 
     # Generar filas de la tabla
     filas_html = ""
@@ -1697,7 +1705,7 @@ letter-spacing:.12em">🔍 ESTADO CONEXIÓN SUPABASE</div>
 
     # ── NAVBAR ───────────────────────────────────────────────────────────────
     usuario_email = st.session_state.get("usuario_email", "")
-    ultima_act = st.session_state.get("ultima_actualizacion", datetime.now())
+    ultima_act = st.session_state.get("ultima_actualizacion", now_colombia())
     theme = st.session_state.get("theme_override", "auto")
     theme_icon = "☀️" if theme == "dark" else "🌙"
 
@@ -1900,7 +1908,7 @@ letter-spacing:.12em">🔍 ESTADO CONEXIÓN SUPABASE</div>
                         "df_siigo_cache": df_siigo,
                         "productos_siigo_cache": productos_siigo,
                         "total_obtenidos": total_obtenidos,
-                        "ultima_actualizacion": datetime.now(),
+                        "ultima_actualizacion": now_colombia(),
                     }
                 )
                 guardar_productos_siigo(productos_siigo)
@@ -1922,7 +1930,7 @@ letter-spacing:.12em">🔍 ESTADO CONEXIÓN SUPABASE</div>
         total_obtenidos = st.session_state.get("total_obtenidos", len(df_siigo))
 
     if "ultima_actualizacion" not in st.session_state:
-        st.session_state["ultima_actualizacion"] = datetime.now()
+        st.session_state["ultima_actualizacion"] = now_colombia()
 
     # ── CRUCE DE INVENTARIOS ──────────────────────────────────────────────────
     df_resultado = cruzar_inventarios(df_excel, df_siigo)
@@ -2044,6 +2052,18 @@ letter-spacing:.12em">🔍 ESTADO CONEXIÓN SUPABASE</div>
             df_filtrado["Referencia"].str.lower().str.contains(q)
             | df_filtrado["Nombre"].str.lower().str.contains(q)
         ]
+    orden_estado = {
+        "🔴 Crítico": 0,
+        "🟡 Bajo": 1,
+        "🟢 OK": 2,
+        "⚪ No encontrado en Siigo": 3,
+    }
+    if not df_filtrado.empty:
+        df_filtrado = (
+            df_filtrado.assign(_orden=df_filtrado["Estado"].map(orden_estado).fillna(9))
+            .sort_values(["_orden", "Diferencia"], ascending=[True, True])
+            .drop(columns="_orden")
+        )
 
     # ── TABLA ─────────────────────────────────────────────────────────────────
     st.markdown(
@@ -2074,28 +2094,28 @@ letter-spacing:.12em">🔍 ESTADO CONEXIÓN SUPABASE</div>
 
     if len(df_faltantes) > 0:
         st.markdown('<div class="cs-section">📥 Exportar</div>', unsafe_allow_html=True)
-        dc1, dc2, dc3 = st.columns(3)
+        dc1, dc2 = st.columns(2)
         with dc1:
             st.download_button(
                 "📥 Faltantes (CSV)",
                 data=generar_csv_descarga(df_faltantes),
-                file_name=f"faltantes_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                file_name=f"faltantes_{now_colombia().strftime('%Y%m%d_%H%M')}.csv",
                 mime="text/csv",
                 use_container_width=True,
+                key="download_faltantes_csv",
             )
         with dc2:
             st.download_button(
                 "📥 Inventario Completo (CSV)",
                 data=generar_csv_descarga(df_resultado),
-                file_name=f"inventario_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                file_name=f"inventario_{now_colombia().strftime('%Y%m%d_%H%M')}.csv",
                 mime="text/csv",
                 use_container_width=True,
+                key="download_inventario_completo_csv",
             )
-        with dc3:
-            st.markdown(
-                f'<div style="padding:12px 0;color:var(--text-muted);font-size:12px">🔴&nbsp;{criticos} crítico(s) · 🟡&nbsp;{bajos} bajo(s) de {total} totales</div>',
-                unsafe_allow_html=True,
-            )
+        st.caption(
+            f"🔴 {criticos} crítico(s) · 🟡 {bajos} bajo(s) · 📦 {total} referencias totales"
+        )
     else:
         st.success("🎉 ¡Excelente! No hay productos con stock crítico o bajo.")
 

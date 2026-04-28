@@ -115,14 +115,31 @@ def classify_product(name: str) -> tuple[str | None, str]:
 
 def _find_csv_files() -> tuple[Path | None, Path | None]:
     """Busca los archivos CSV en rutas candidatas (raíz del proyecto)."""
-    candidates = [
-        Path(__file__).resolve().parents[1],  # raíz del proyecto
-        Path(__file__).resolve().parent,       # inventory_monitor/
-        Path.cwd(),
+    roots = [
+        Path(__file__).resolve().parents[1],  # raíz esperada del proyecto
+        Path(__file__).resolve().parent,      # inventory_monitor/
+        Path.cwd(),                           # cwd de streamlit run
+        Path.cwd().parent,                    # si streamlit corre dentro de inventory_monitor/
     ]
+    # Deduplicar rutas manteniendo orden
+    candidates = list(dict.fromkeys(r.resolve() for r in roots if r.exists()))
     ventas_path: Path | None = None
     saldos_path: Path | None = None
 
+    # 1) Intento por nombre exacto (más estable)
+    exact_ventas = "Ventas por producto 2025 Colsabor - Sheet1.csv"
+    exact_saldos = "Saldos de productos - 31-12-25.xlsx - Sheet1.csv"
+    for base in candidates:
+        v = base / exact_ventas
+        s = base / exact_saldos
+        if ventas_path is None and v.exists():
+            ventas_path = v
+        if saldos_path is None and s.exists():
+            saldos_path = s
+        if ventas_path and saldos_path:
+            return ventas_path, saldos_path
+
+    # 2) Intento por patrones
     for base in candidates:
         if ventas_path is None:
             hits = list(base.glob("Ventas*Colsabor*.csv"))
@@ -134,6 +151,20 @@ def _find_csv_files() -> tuple[Path | None, Path | None]:
                 saldos_path = hits[0]
         if ventas_path and saldos_path:
             break
+
+    # 3) Último intento recursivo en primer nivel de cada carpeta candidata
+    if ventas_path is None or saldos_path is None:
+        for base in candidates:
+            if ventas_path is None:
+                hits = list(base.rglob("Ventas*Colsabor*.csv"))
+                if hits:
+                    ventas_path = hits[0]
+            if saldos_path is None:
+                hits = list(base.rglob("Saldos*31-12*.csv"))
+                if hits:
+                    saldos_path = hits[0]
+            if ventas_path and saldos_path:
+                break
 
     return ventas_path, saldos_path
 
@@ -411,7 +442,13 @@ def render_dane_survey() -> None:
             "- `Ventas por producto 2025 Colsabor - Sheet1.csv`\n"
             "- `Saldos de productos - 31-12-25.xlsx - Sheet1.csv`"
         )
+        st.caption(
+            f"Ruta actual de ejecución: `{Path.cwd()}`"
+        )
         return
+    st.caption(
+        f"Archivos cargados: `{ventas_path.name}` y `{saldos_path.name}`"
+    )
 
     # ── Carga de datos ────────────────────────────────────────────────────
     with st.spinner("Cargando y clasificando productos…"):
@@ -502,6 +539,7 @@ def render_dane_survey() -> None:
         df_display,
         use_container_width=True,
         hide_index=True,
+        height=420,
         column_config={
             "Código DIAN": st.column_config.TextColumn("Cód. DIAN", width="small"),
             "Producto": st.column_config.TextColumn("Categoría DIAN", width="medium"),
