@@ -1829,7 +1829,9 @@ letter-spacing:.12em">📦 DEPENDENCIAS INSTALADAS</div>
             <span class="cs-live-dot"></span>
             <span class="cs-nav-ts" style="color:var(--green);font-weight:700;font-size:10px;letter-spacing:.1em">LIVE</span>
             <span class="cs-nav-ts" style="color:var(--border-subtle)">|</span>
-            <span class="cs-nav-ts">{ultima_act.strftime('%d %b %Y %H:%M')}</span>
+            <span class="cs-nav-ts">{now_colombia().strftime('%d %b %Y · %H:%M:%S')}</span>
+            <span class="cs-nav-ts" style="color:var(--border-subtle)">|</span>
+            <span class="cs-nav-ts" style="font-size:9px;opacity:.7">act. {ultima_act.strftime('%H:%M')}</span>
             <span class="cs-nav-user">{usuario_email.split('@')[0].upper()}</span>
           </div>
         </div>
