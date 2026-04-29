@@ -14,6 +14,32 @@ Sistema web moderno para monitorear y controlar el inventario conectado a la API
 
 ## 🚀 Inicio Rápido
 
+### Nueva app sin Streamlit (en migración)
+
+La nueva interfaz usa frontend Next.js y backend FastAPI para evitar depender de los componentes internos de Streamlit.
+
+1. **Instalar dependencias Python:**
+```bash
+pip install -r requirements.txt
+```
+
+2. **Levantar la API:**
+```bash
+uvicorn backend.main:app --reload --port 8000
+```
+
+3. **Levantar el frontend:**
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+4. **Abrir en el navegador:**
+La nueva app queda en `http://localhost:3000` y consume la API en `http://localhost:8000`.
+
+> Estado actual: la pantalla DANE ya tiene una ruta nueva con tablas ordenables y expandibles propios. La app Streamlit se mantiene como legado mientras se migra el monitor completo.
+
 ### Opción 1: Usar la app en la nube (Recomendado)
 Ver instrucciones completas en [DEPLOYMENT.md](DEPLOYMENT.md)
 

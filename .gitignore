@@ -25,6 +25,8 @@ venv/
 env/
 ENV/
 .venv
+node_modules/
+.next/
 
 # IDE
 .vscode/
@@ -42,6 +44,8 @@ Thumbs.db
 
 # Logs
 *.log
+.coverage
+htmlcov/
 
 # Excel temporal files
 ~$*.xlsx

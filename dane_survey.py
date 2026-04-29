@@ -93,6 +93,25 @@ DIAN_CATEGORIES: list[dict] = [
 
 _CODE_TO_CAT: dict[str, dict] = {c["codigo"]: c for c in DIAN_CATEGORIES}
 
+_EXCLUDED_PRODUCT_KEYWORDS = (
+    "BIDON",
+    "BIDÓN",
+    "BIDONES",
+    "BOTELLA",
+    "CAJA",
+    "EMPAQUE",
+    "ENVASE",
+    "FRASCO",
+    "GARRAFA",
+    "GOTERO",
+    "TAPA",
+    "TAPON",
+    "TAPÓN",
+    "TAPONES",
+    "TARRINA",
+    "TARRO",
+)
+
 # ─────────────────────────────────────────────────────────────────────────────
 # MIDDLEWARE DE CLASIFICACIÓN
 # ─────────────────────────────────────────────────────────────────────────────
@@ -106,6 +125,15 @@ def classify_product(name: str) -> tuple[str | None, str]:
             if kw in name_up:
                 return cat["codigo"], cat["nombre"]
     return None, "Sin clasificar"
+
+
+def _is_excluded_inventory_product(name: str) -> bool:
+    """Excluye envases/empaques que no hacen parte del producto DIAN a reportar."""
+    name_up = str(name).upper()
+    return any(
+        re.search(rf"\b{re.escape(keyword)}S?\b", name_up)
+        for keyword in _EXCLUDED_PRODUCT_KEYWORDS
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -313,9 +341,11 @@ def calcular_tabla_dian(
     """
     Clasifica productos y agrega por categoría DIAN.
 
-    Regla de negocio aplicada:
-        Los productos con código que empieza con "10" son materias primas
-        (MATERIAS PRIMAS en Siigo) y se excluyen del informe de encuesta.
+    Reglas de negocio aplicadas:
+        - Los productos con código que empieza con "10" son materias primas
+          (MATERIAS PRIMAS en Siigo) y se excluyen del informe de encuesta.
+        - Envases y empaques (garrafas, botellas, goteros, tapas, etc.) no
+          hacen parte de los productos DIAN que se deben reportar.
 
     Retorna:
         df_dian     – tabla principal con 9 categorías DIAN
@@ -330,6 +360,16 @@ def calcular_tabla_dian(
     if not df_saldos.empty:
         df_saldos = df_saldos[
             ~df_saldos["codigo"].astype(str).str.startswith("10")
+        ].copy()
+
+    # ── Excluir envases/empaques que no se reportan como producto DIAN ────
+    if not df_ventas.empty:
+        df_ventas = df_ventas[
+            ~df_ventas["nombre"].apply(_is_excluded_inventory_product)
+        ].copy()
+    if not df_saldos.empty:
+        df_saldos = df_saldos[
+            ~df_saldos["nombre"].apply(_is_excluded_inventory_product)
         ].copy()
 
     # ── Clasificar ventas ─────────────────────────────────────────────────
@@ -730,17 +770,32 @@ def render_dane_survey() -> None:
                     df_v_show["% de cant."] = (
                         df_v_show["Cant. vendida"] / tot_cat * 100
                         if tot_cat > 0 else 0.0
-                    ).apply(lambda x: f"{x:.1f}%")
+                    )
                     df_v_show["V/U ($)"] = (
                         df_v_show["Subtotal ($)"] / df_v_show["Cant. vendida"]
-                    ).apply(lambda x: f"$ {x:,.0f}" if x > 0 else "–")
-                    df_v_show["Subtotal ($)"] = df_v_show["Subtotal ($)"].apply(
-                        lambda x: f"$ {x:,.0f}"
                     )
-                    df_v_show["Cant. vendida"] = df_v_show["Cant. vendida"].apply(
-                        lambda x: f"{x:,.2f}"
+                    df_v_show["V/U ($)"] = df_v_show["V/U ($)"].replace(
+                        [float("inf"), float("-inf")], 0.0
+                    ).fillna(0.0)
+                    st.dataframe(
+                        df_v_show,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Cant. vendida": st.column_config.NumberColumn(
+                                "Cant. vendida", format="%.2f"
+                            ),
+                            "Subtotal ($)": st.column_config.NumberColumn(
+                                "Subtotal ($)", format="$ %.0f"
+                            ),
+                            "% de cant.": st.column_config.NumberColumn(
+                                "% de cant.", format="%.1f%%"
+                            ),
+                            "V/U ($)": st.column_config.NumberColumn(
+                                "V/U ($)", format="$ %.0f"
+                            ),
+                        },
                     )
-                    st.dataframe(df_v_show, use_container_width=True, hide_index=True)
                     st.caption(
                         f"Promedio ponderado = Σ Subtotal ÷ Σ Cant. = "
                         f"$ {val_cat:,.0f} ÷ {tot_cat:,.2f} = "
@@ -757,11 +812,20 @@ def render_dane_survey() -> None:
                     df_s_show["% del total cat."] = (
                         df_s_show["Saldo (uds.)"] / tot_s * 100
                         if tot_s > 0 else 0.0
-                    ).apply(lambda x: f"{x:.1f}%")
-                    df_s_show["Saldo (uds.)"] = df_s_show["Saldo (uds.)"].apply(
-                        lambda x: f"{x:,.2f}"
                     )
-                    st.dataframe(df_s_show, use_container_width=True, hide_index=True)
+                    st.dataframe(
+                        df_s_show,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Saldo (uds.)": st.column_config.NumberColumn(
+                                "Saldo (uds.)", format="%.2f"
+                            ),
+                            "% del total cat.": st.column_config.NumberColumn(
+                                "% del total cat.", format="%.1f%%"
+                            ),
+                        },
+                    )
 
     # ── Productos sin clasificar ──────────────────────────────────────────
     df_v_sin = df_v_detail[df_v_detail["dian_codigo"].isna()].copy()
