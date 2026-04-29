@@ -40,6 +40,15 @@ La nueva app queda en `http://localhost:3000` y consume la API en `http://localh
 
 > Estado actual: la pantalla DANE ya tiene una ruta nueva con tablas ordenables y expandibles propios. La app Streamlit se mantiene como legado mientras se migra el monitor completo.
 
+### Publicar en Render
+
+El repo incluye `render.yaml` para crear un servicio web único en Render. El build instala Python, compila el frontend Next.js como estático y FastAPI sirve tanto la API como la interfaz.
+
+1. Entra a `https://render.com/deploy?repo=https://github.com/DelValleDev/monitor-inventario-colsabor`.
+2. Conecta tu cuenta de GitHub si Render lo solicita.
+3. Confirma el servicio `colsabor-inventory`.
+4. Al terminar el deploy, Render entregará una URL pública `https://...onrender.com`.
+
 ### Opción 1: Usar la app en la nube (Recomendado)
 Ver instrucciones completas en [DEPLOYMENT.md](DEPLOYMENT.md)
 

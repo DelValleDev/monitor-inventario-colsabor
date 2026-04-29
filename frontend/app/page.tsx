@@ -52,7 +52,13 @@ type DanePayload = {
   };
 };
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ??
+  (typeof window !== "undefined" &&
+  window.location.hostname === "localhost" &&
+  window.location.port === "3000"
+    ? "http://localhost:8000"
+    : "");
 
 const moneyFormatter = new Intl.NumberFormat("es-CO", {
   maximumFractionDigits: 0,

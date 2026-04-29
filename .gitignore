@@ -27,6 +27,8 @@ ENV/
 .venv
 node_modules/
 .next/
+out/
+frontend/out/
 
 # IDE
 .vscode/

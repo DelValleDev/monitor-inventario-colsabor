@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from io import StringIO
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 import dane_core
 
@@ -90,3 +92,8 @@ async def calculate_uploaded_dane(
         "saldos": saldos.filename,
     }
     return payload
+
+
+frontend_out = Path(__file__).resolve().parents[1] / "frontend" / "out"
+if frontend_out.exists():
+    app.mount("/", StaticFiles(directory=frontend_out, html=True), name="frontend")
