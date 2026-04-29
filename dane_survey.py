@@ -114,12 +114,21 @@ def classify_product(name: str) -> tuple[str | None, str]:
 
 
 def _find_csv_files() -> tuple[Path | None, Path | None]:
-    """Busca los archivos CSV en rutas candidatas (raíz del proyecto)."""
+    """Busca los archivos CSV en rutas candidatas (raíz del proyecto).
+
+    Orden de búsqueda:
+      1. data/ junto al módulo  → siempre funciona en Streamlit Cloud
+      2. Directorio del módulo
+      3. Parents del módulo (entorno local de desarrollo)
+      4. cwd y su padre (fallback)
+    """
+    module_dir = Path(__file__).resolve().parent
     roots = [
-        Path(__file__).resolve().parents[1],  # raíz esperada del proyecto
-        Path(__file__).resolve().parent,      # inventory_monitor/
-        Path.cwd(),                           # cwd de streamlit run
-        Path.cwd().parent,                    # si streamlit corre dentro de inventory_monitor/
+        module_dir / "data",              # data/ en el repo → prioridad máxima
+        module_dir,                       # inventory_monitor/
+        module_dir.parent,               # raíz del proyecto (entorno local)
+        Path.cwd(),                      # cwd de streamlit run
+        Path.cwd().parent,               # si streamlit corre dentro de inventory_monitor/
     ]
     # Deduplicar rutas manteniendo orden
     candidates = list(dict.fromkeys(r.resolve() for r in roots if r.exists()))
