@@ -29,6 +29,8 @@ node_modules/
 .next/
 out/
 frontend/out/
+frontend/test-results/
+frontend/playwright-report/
 
 # IDE
 .vscode/

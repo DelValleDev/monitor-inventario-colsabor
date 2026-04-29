@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+from io import BytesIO
 from io import StringIO
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 import dane_core
+import inventory_core
 
 
 app = FastAPI(
@@ -44,6 +47,16 @@ async def _upload_to_text(upload: UploadFile) -> StringIO:
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.post("/api/auth/login")
+async def login(payload: dict) -> dict:
+    email = str(payload.get("email", ""))
+    password = str(payload.get("password", ""))
+    result = inventory_core.authenticate_user(email, password)
+    if not result["success"]:
+        raise HTTPException(status_code=401, detail=result["error"])
+    return result
 
 
 @app.get("/api/dane/current")
@@ -94,6 +107,91 @@ async def calculate_uploaded_dane(
     return payload
 
 
+@app.get("/api/inventory/current")
+def inventory_current(refresh: Annotated[bool, Query()] = False) -> dict:
+    try:
+        return inventory_core.get_current_inventory_payload(refresh=refresh)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/inventory/refresh")
+def inventory_refresh() -> dict:
+    try:
+        return inventory_core.get_current_inventory_payload(refresh=True)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/inventory/upload")
+async def inventory_upload(file: Annotated[UploadFile, File(description="Excel de inventario minimo")]) -> dict:
+    raw = await file.read()
+    try:
+        df_excel = inventory_core.parse_inventory_excel(BytesIO(raw))
+        df_siigo, total_siigo, updated_at, source = inventory_core.get_siigo_dataframe(refresh=False)
+        payload = inventory_core.build_inventory_payload(df_excel, df_siigo, total_siigo, updated_at, source)
+        payload["source"]["inventory"] = file.filename or "excel"
+        return payload
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/inventory/export/full")
+def inventory_export_full() -> Response:
+    try:
+        payload = inventory_core.get_current_inventory_payload(refresh=False)
+        df = inventory_core.pd.DataFrame(payload["rows"])
+        content = inventory_core.generar_excel_tabla_descarga(df, sheet_title="inventario", table_display_name="TablaInventario")
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": 'attachment; filename="inventario_completo.xlsx"'},
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/inventory/export/missing")
+def inventory_export_missing() -> Response:
+    try:
+        payload = inventory_core.get_current_inventory_payload(refresh=False)
+        rows = [
+            row
+            for row in payload["rows"]
+            if "Crítico" in str(row.get("Estado", "")) or "Bajo" in str(row.get("Estado", ""))
+        ]
+        df = inventory_core.pd.DataFrame(rows)
+        content = inventory_core.generar_excel_tabla_descarga(df, sheet_title="faltantes", table_display_name="TablaFaltantes")
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": 'attachment; filename="faltantes.xlsx"'},
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 frontend_out = Path(__file__).resolve().parents[1] / "frontend" / "out"
-if frontend_out.exists():
-    app.mount("/", StaticFiles(directory=frontend_out, html=True), name="frontend")
+static_assets = frontend_out / "_next"
+if static_assets.exists():
+    app.mount("/_next", StaticFiles(directory=static_assets), name="next-assets")
+
+
+@app.get("/{full_path:path}")
+def serve_frontend(full_path: str):
+    if not frontend_out.exists():
+        raise HTTPException(status_code=404, detail="Frontend no construido.")
+
+    requested = frontend_out / full_path
+    if requested.is_file():
+        return FileResponse(requested)
+
+    html_file = frontend_out / f"{full_path}.html"
+    if html_file.is_file():
+        return FileResponse(html_file)
+
+    index_file = frontend_out / "index.html"
+    if index_file.is_file():
+        return FileResponse(index_file)
+
+    raise HTTPException(status_code=404, detail="Frontend no encontrado.")
