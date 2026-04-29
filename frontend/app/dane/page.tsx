@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { DaneDashboard } from "@/components/dane/dane-dashboard";
-import { getCurrentDane } from "@/lib/api";
-import type { DanePayload } from "@/types/dane";
-import { Loader } from "@/components/ui/loader";
+import { DaneDashboard } from "@/features/dane/dane-dashboard";
+import { getCurrentDane } from "@/shared/lib/api";
+import type { DanePayload } from "@/shared/types/dane";
+import { Loader } from "@/shared/ui/loader";
 
 export default function DanePage() {
   const [payload, setPayload] = useState<DanePayload | null>(null);

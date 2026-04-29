@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { InventoryDashboard } from "@/components/inventory/inventory-dashboard";
-import { getInventory } from "@/lib/api";
-import type { InventoryPayload } from "@/types/inventory";
-import { Loader } from "@/components/ui/loader";
+import { InventoryDashboard } from "@/features/inventory/inventory-dashboard";
+import { getInventory } from "@/shared/lib/api";
+import type { InventoryPayload } from "@/shared/types/inventory";
+import { Loader } from "@/shared/ui/loader";
 
 export default function MonitorPage() {
   const [payload, setPayload] = useState<InventoryPayload | null>(null);

@@ -5,7 +5,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { type ReactNode, useEffect, useState } from "react";
 import { Toaster } from "sonner";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
+import { ParticleField } from "./particle-field";
 
 const navItems = [
   { href: "/monitor", label: "Monitor", icon: PackageSearch },
@@ -22,6 +23,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="app-shell">
+      <ParticleField />
       <div className="ambient ambient-a" />
       <div className="ambient ambient-b" />
 

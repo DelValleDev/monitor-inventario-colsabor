@@ -1,6 +1,6 @@
 import "./globals.css";
 import type { ReactNode } from "react";
-import { AppShell } from "@/components/layout/app-shell";
+import { AppShell } from "@/widgets/layout/app-shell";
 
 export const metadata = {
   title: "Colsabor Inventory",

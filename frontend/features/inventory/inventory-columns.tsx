@@ -1,8 +1,8 @@
 "use client";
 
 import type { ColumnDef } from "@tanstack/react-table";
-import { formatNumber } from "@/lib/format";
-import type { InventoryRow } from "@/types/inventory";
+import { formatNumber } from "@/shared/lib/format";
+import type { InventoryRow } from "@/shared/types/inventory";
 
 function statusClass(status: string) {
   if (status.includes("Crítico")) return "status-critical";

@@ -3,14 +3,14 @@
 import { Download, FileSpreadsheet, RefreshCw, UploadCloud } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { API_URL, getInventory, uploadInventory } from "@/lib/api";
-import { formatNumber } from "@/lib/format";
-import type { InventoryPayload } from "@/types/inventory";
-import { PageHeader } from "@/components/layout/page-header";
-import { Button } from "@/components/ui/button";
-import { KpiCard } from "@/components/ui/card";
-import { DataTable } from "@/components/ui/data-table";
-import { Loader } from "@/components/ui/loader";
+import { API_URL, getInventory, uploadInventory } from "@/shared/lib/api";
+import { formatNumber } from "@/shared/lib/format";
+import type { InventoryPayload } from "@/shared/types/inventory";
+import { PageHeader } from "@/widgets/layout/page-header";
+import { Button } from "@/shared/ui/button";
+import { KpiCard } from "@/shared/ui/card";
+import { DataTable } from "@/shared/ui/data-table";
+import { Loader } from "@/shared/ui/loader";
 import { inventoryColumns } from "./inventory-columns";
 import { InventoryCharts } from "./inventory-charts";
 

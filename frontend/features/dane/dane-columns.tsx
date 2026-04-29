@@ -1,8 +1,8 @@
 "use client";
 
 import type { ColumnDef } from "@tanstack/react-table";
-import { formatMoney, formatNumber, formatPercent } from "@/lib/format";
-import type { DictRow } from "@/types/dane";
+import { formatMoney, formatNumber, formatPercent } from "@/shared/lib/format";
+import type { DictRow } from "@/shared/types/dane";
 
 const numberCell = (value: unknown) => <span className="cell-number">{formatNumber(value)}</span>;
 const moneyCell = (value: unknown) => <span className="cell-number">{formatMoney(value)}</span>;

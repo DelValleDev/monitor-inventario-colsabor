@@ -86,6 +86,14 @@ a {
   z-index: 0;
 }
 
+.particle-field {
+  inset: 0;
+  opacity: 0.42;
+  pointer-events: none;
+  position: fixed;
+  z-index: 0;
+}
+
 .ambient-a {
   background: rgba(56, 189, 248, 0.26);
   height: 360px;
@@ -369,6 +377,11 @@ a {
   overflow: hidden;
 }
 
+.glass-card,
+.panel {
+  animation: rise-in 0.5s ease both;
+}
+
 .panel {
   padding: 20px;
 }
@@ -586,6 +599,7 @@ a {
 
 .category-card:hover {
   border-color: var(--border-strong);
+  transform: translateY(-2px);
 }
 
 .category-trigger {
@@ -723,6 +737,17 @@ a {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 @media (max-width: 1180px) {

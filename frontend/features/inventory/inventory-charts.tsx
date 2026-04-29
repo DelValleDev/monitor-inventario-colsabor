@@ -11,7 +11,7 @@ import {
   XAxis,
   YAxis
 } from "recharts";
-import type { InventoryPayload } from "@/types/inventory";
+import type { InventoryPayload } from "@/shared/types/inventory";
 
 const COLORS = ["#fb7185", "#fbbf24", "#34d399", "#94a3b8"];
 

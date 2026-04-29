@@ -3,10 +3,10 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { BarChart3, Boxes, ChevronRight, PackageOpen } from "lucide-react";
 import { useState } from "react";
-import { formatMoney, formatNumber, formatPercent } from "@/lib/format";
-import type { Category } from "@/types/dane";
-import { DataTable } from "@/components/ui/data-table";
-import { TabSwitch } from "@/components/ui/tabs";
+import { formatMoney, formatNumber, formatPercent } from "@/shared/lib/format";
+import type { Category } from "@/shared/types/dane";
+import { DataTable } from "@/shared/ui/data-table";
+import { TabSwitch } from "@/shared/ui/tabs";
 import { saldosColumns, ventasColumns } from "./dane-columns";
 
 type ActiveTab = "ventas" | "saldos";

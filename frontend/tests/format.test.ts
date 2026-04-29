@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { asNumber, formatNumber, formatPercent } from "@/lib/format";
+import { asNumber, formatNumber, formatPercent } from "@/shared/lib/format";
 
 describe("format helpers", () => {
   it("parses numeric display strings", () => {

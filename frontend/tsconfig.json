@@ -21,6 +21,24 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@/components/ui/*": [
+        "./shared/ui/*"
+      ],
+      "@/components/layout/*": [
+        "./widgets/layout/*"
+      ],
+      "@/components/dane/*": [
+        "./features/dane/*"
+      ],
+      "@/components/inventory/*": [
+        "./features/inventory/*"
+      ],
+      "@/lib/*": [
+        "./shared/lib/*"
+      ],
+      "@/types/*": [
+        "./shared/types/*"
       ]
     },
     "plugins": [

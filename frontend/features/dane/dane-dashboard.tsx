@@ -3,14 +3,14 @@
 import { Download, RefreshCw, Upload } from "lucide-react";
 import { FormEvent, useState } from "react";
 import { toast } from "sonner";
-import { calculateDane, getCurrentDane } from "@/lib/api";
-import { formatMoney, formatNumber } from "@/lib/format";
-import type { DanePayload, DictRow } from "@/types/dane";
-import { Button } from "@/components/ui/button";
-import { KpiCard } from "@/components/ui/card";
-import { DataTable } from "@/components/ui/data-table";
-import { Loader } from "@/components/ui/loader";
-import { PageHeader } from "@/components/layout/page-header";
+import { calculateDane, getCurrentDane } from "@/shared/lib/api";
+import { formatMoney, formatNumber } from "@/shared/lib/format";
+import type { DanePayload, DictRow } from "@/shared/types/dane";
+import { Button } from "@/shared/ui/button";
+import { KpiCard } from "@/shared/ui/card";
+import { DataTable } from "@/shared/ui/data-table";
+import { Loader } from "@/shared/ui/loader";
+import { PageHeader } from "@/widgets/layout/page-header";
 import { CategoryAccordion } from "./category-accordion";
 import { dianColumns, saldosColumns, ventasColumns } from "./dane-columns";
 
